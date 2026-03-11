@@ -1,45 +1,47 @@
-import math
-import time
-import os
-import sys
+def add(a, b):
+    return a + b
 
-def clear():
-    os.system("cls" if os.name == "nt" else "clear")
+def subtract(a, b):
+    return a - b
 
-width = 80
-height = 40
+def multiply(a, b):
+    return a * b
 
-t = 0
+def divide(a, b):
+    if b == 0:
+        raise ValueError("Delen door nul is niet mogelijk")
+    return a / b
 
-try:
-    for _ in range(2):
-        clear()
-        for y in range(height):
-            for x in range(width):
-                cx = x - width / 2
-                cy = y - height / 2
+def main():
+    print("=== Rekenmachine ===")
+    print("Operaties: + - * /")
+    print("Typ 'stop' om af te sluiten\n")
 
-                distance = math.sqrt(cx**2 + cy**2)
-                angle = math.atan2(cy, cx)
+    while True:
+        invoer = input("Berekening (bijv. 5 + 3): ").strip()
+        if invoer.lower() == "stop":
+            break
 
-                value = math.sin(distance * 0.3 - t + angle)
+        for op in ["+", "-", "*", "/"]:
+            if op in invoer:
+                delen = invoer.split(op)
+                if len(delen) == 2:
+                    try:
+                        a = float(delen[0].strip())
+                        b = float(delen[1].strip())
+                        if op == "+":
+                            print(f"= {add(a, b)}")
+                        elif op == "-":
+                            print(f"= {subtract(a, b)}")
+                        elif op == "*":
+                            print(f"= {multiply(a, b)}")
+                        elif op == "/":
+                            print(f"= {divide(a, b)}")
+                    except ValueError as e:
+                        print(f"Fout: {e}")
+                    break
+        else:
+            print("Ongeldige invoer")
 
-                if value > 0.5:
-                    char = "*"
-                elif value > 0:
-                    char = "+"
-                elif value > -0.5:
-                    char = "."
-                else:
-                    char = " "
-
-                sys.stdout.write(char)
-            sys.stdout.write("\n")
-
-        sys.stdout.flush()
-        t += 0.15
-        time.sleep(0.05)
-
-except KeyboardInterrupt:
-    clear()
-    print("Animation stopped.")
+if __name__ == "__main__":
+    main()
