@@ -11,7 +11,7 @@ width = 80
 height = 40
 
 t = 0
-#hoi#
+#hoihoeasdjflkjs#
 try:
     while True:
         clear()
