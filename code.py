@@ -13,14 +13,6 @@ t = 0
 
 #werkt dit kk ding eindelijk
 
-
-#faka boys test die het goed#
-#alles lekker negers#
-#asdlfkajsdklfjaskldfj;lk;asjdfkljasldk#
-#sdflkjsdlkfj#
-#tryfyufgyughhSDjhjg# 
-
-#fkiuofkaofkueriaeofiwufhiwu# 
 try:
     for _ in range(2):
         clear()
