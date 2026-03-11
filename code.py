@@ -15,6 +15,8 @@ t = 0
 #faka boys test die het goed#
 #alles lekker negers#
 #asdlfkajsdklfjaskldfj;lk;asjdfkljasldk#
+#sdflkjsdlkfj#
+
 
 try:
     while True:
