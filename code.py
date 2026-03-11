@@ -11,10 +11,6 @@ def divide(a, b):
     if b == 0:
         raise ValueError("Delen door nul is niet mogelijk")
     return a / b
-# werkt het??#
-#kk ding werkt eindelijk vm
-#testt
-
 def main():
     print("=== Rekenmachine ===")
     print("Operaties: + - * /")
