@@ -12,6 +12,8 @@ def divide(a, b):
         raise ValueError("Delen door nul is niet mogelijk")
     return a / b
 # werkt het??#
+#kk ding werkt eindelijk vm
+
 
 def main():
     print("=== Rekenmachine ===")
