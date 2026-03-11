@@ -1,1 +1,2 @@
-#ewa drerries#
+#ewa drerries wat een kenker bende is dit now weer#
+print("Hello, World!")
