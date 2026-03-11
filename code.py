@@ -12,6 +12,7 @@ height = 40
 
 t = 0
 #hoihoeasdjflkjs#
+#faka boys test die het goed#
 try:
     while True:
         clear()
