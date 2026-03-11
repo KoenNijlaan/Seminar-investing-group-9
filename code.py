@@ -11,7 +11,7 @@ width = 80
 height = 40
 
 t = 0
-
+#hoi#
 try:
     while True:
         clear()
