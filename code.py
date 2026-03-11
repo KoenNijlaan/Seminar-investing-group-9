@@ -30,7 +30,7 @@ t = 0
 
 #fkiuofkaofkueriaeofiwufhiwu# 
 try:
-    for _ in range(100):
+    for _ in range(2):
         clear()
         for y in range(height):
             for x in range(width):
