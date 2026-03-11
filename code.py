@@ -13,6 +13,8 @@ height = 40
 t = 0
 #hoihoeasdjflkjs#
 #faka boys test die het goed#
+#alles lekker negers#
+
 try:
     while True:
         clear()
