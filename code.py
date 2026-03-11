@@ -19,6 +19,7 @@ t = 0
 #sdflkjsdlkfj#
 #tryfyufgyughhjhjg#
 
+#werkt dit kk ding eindelijk
 
 
 #faka boys test die het goed#
