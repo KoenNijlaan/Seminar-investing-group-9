@@ -10,8 +10,6 @@ def clear():
 width = 80
 height = 40
 
-#test
-
 t = 0
 #hoihoeasdjflkjs#
 #faka boys test die het goed#
