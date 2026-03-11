@@ -11,8 +11,6 @@ height = 40
 
 t = 0
 
-#werkt dit kk ding eindelijk
-
 try:
     for _ in range(2):
         clear()
