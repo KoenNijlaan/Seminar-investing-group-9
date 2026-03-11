@@ -19,6 +19,12 @@ t = 0
 #tryfyufgyughhjhjg#
 
 
+
+#faka boys test die het goed#
+#alles lekker negers#
+#asdlfkajsdklfjaskldfj;lk;asjdfkljasldk#
+#sdflkjsdlkfj#
+#tryfyufgyughhjhjg#
 try:
     while True:
         clear()
