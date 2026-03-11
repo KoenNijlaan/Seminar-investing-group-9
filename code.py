@@ -26,7 +26,7 @@ t = 0
 #alles lekker negers#
 #asdlfkajsdklfjaskldfj;lk;asjdfkljasldk#
 #sdflkjsdlkfj#
-#tryfyufgyughhjhjg# 
+#tryfyufgyughhSDjhjg# 
 
 #fkiuofkaofkueriaeofiwufhiwu# 
 try:
