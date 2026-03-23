@@ -1,11 +1,22 @@
-# Ignore everything inside data folders
+# Ignore all data contents
 data_raw/**
 data_intermediate/**
 data_final/**
 output/**
 
-# BUT keep all .gitkeep files (at any level)
+# Keep all .gitkeep files
 !data_raw/**/.gitkeep
 !data_intermediate/**/.gitkeep
 !data_final/**/.gitkeep
 !output/**/.gitkeep
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
