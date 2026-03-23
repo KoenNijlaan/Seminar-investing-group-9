@@ -1,4 +1,13 @@
 data_raw/.gitkeep
+data_raw/intraday_stocks/.gitkeep
+
 data_intermediate/.gitkeep
+data_intermediate/converted_parquet/.gitkeep
+data_intermediate/rsj_daily/.gitkeep
+data_intermediate/weekly_data/.gitkeep
+data_intermediate/weekly_data/res_weekly/.gitkeep
+data_intermediate/weekly_data/rsj_weekly/.gitkeep
+data_intermediate/weekly_stock_returns/.gitkeep
+
 data_final/.gitkeep
 output/.gitkeep
