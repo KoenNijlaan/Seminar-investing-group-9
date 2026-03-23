@@ -25,6 +25,9 @@ for i, file_path in enumerate(files, start=1):
 
     df = pd.read_parquet(file_path)
 
+    # Keep only stock-days with sufficient intraday observations
+    df = df[df["n_obs"] >= 40].copy()
+
     df["rsj"] = df["returns_5m"].apply(compute_rsj)
 
     out = df[[

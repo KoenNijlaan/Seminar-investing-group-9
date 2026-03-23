@@ -23,7 +23,7 @@ for i, file_path in enumerate(files, start=1):
     # Convert date to datetime
     df["date"] = pd.to_datetime(df["date"])
 
-    # Faster week variable: week ending Friday
+    # Week ending Friday
     df["week"] = df["date"].dt.to_period("W-FRI").dt.end_time.dt.normalize()
 
     # Aggregate within this file
@@ -58,6 +58,7 @@ weekly["rsj_weekly"] = weekly["rsj_sum"] / weekly["rsj_count"]
 weekly["n_days"] = weekly["rsj_count"]
 
 weekly = weekly.dropna(subset=["rsj_weekly"])
+weekly = weekly[weekly["n_days"] >= 3].copy()
 
 weekly = weekly[["permno", "week", "rsj_weekly", "n_days", "n_obs_total"]]
 
