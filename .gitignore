@@ -1,4 +1,23 @@
-data_raw/
-data_intermediate/
-data_final/
-output/
+# Ignore data contents but keep folders
+data_raw/*
+!data_raw/.gitkeep
+
+data_intermediate/*
+!data_intermediate/.gitkeep
+
+data_final/*
+!data_final/.gitkeep
+
+output/*
+!output/.gitkeep
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/

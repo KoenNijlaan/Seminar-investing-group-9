@@ -1,0 +1,4 @@
+data_raw/.gitkeep
+data_intermediate/.gitkeep
+data_final/.gitkeep
+output/.gitkeep
