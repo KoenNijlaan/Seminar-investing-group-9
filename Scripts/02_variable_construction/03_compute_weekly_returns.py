@@ -12,6 +12,7 @@ import numpy as np
 # - ret_crsp is stored in PERCENT units in the raw files.
 # - Therefore, ret_crsp must be divided by 100 before compounding.
 # - Week definition matches RSJ and RES: W-FRI.
+# - We require at least 3 valid daily returns per stock-week.
 # =========================================================
 
 # =========================================================
@@ -36,10 +37,6 @@ def compound_returns(x: pd.Series) -> float:
 
     ret_crsp is in percent form, so divide by 100 first:
         5.0 means 5%, not 0.05
-
-    Weekly return:
-        R_i_w = prod(1 + r_i_d) - 1
-    where r_i_d is in decimal form.
     """
     x = pd.to_numeric(x, errors="coerce") / 100.0
     x = x[np.isfinite(x)]
@@ -62,7 +59,7 @@ for i, file_path in enumerate(files, start=1):
     df["date"] = pd.to_datetime(df["date"])
     df["permno"] = df["permno"].astype("Int64")
 
-    # Match RSJ and RES convention: week ending Friday
+    # Week ending Friday
     df["week"] = df["date"].dt.to_period("W-FRI").dt.end_time.dt.normalize()
 
     parts.append(df[["permno", "date", "week", "ret_crsp"]])
@@ -75,9 +72,6 @@ daily_df = pd.concat(parts, ignore_index=True)
 print(f"\nDaily rows: {len(daily_df):,}")
 print(f"Unique stocks: {daily_df['permno'].nunique():,}")
 print(f"Date range: {daily_df['date'].min().date()} to {daily_df['date'].max().date()}")
-
-print("\nDaily ret_crsp summary (raw percent values):")
-print(daily_df["ret_crsp"].describe())
 
 # =========================================================
 # Compute weekly stock returns R_i_w
@@ -96,14 +90,22 @@ weekly = (
 
 weekly = weekly.sort_values(["permno", "week"]).reset_index(drop=True)
 
+# Keep only stock-weeks with at least 3 valid daily returns
+weekly = weekly[weekly["n_days"] >= 3].copy()
+
 # =========================================================
 # Create next-week return R_i_w_plus_1
 # =========================================================
 print("Creating next-week return...")
 
-weekly["R_i_w_plus_1"] = (
-    weekly.groupby("permno")["R_i_w"].shift(-1)
-)
+weekly["R_i_w_plus_1"] = weekly.groupby("permno")["R_i_w"].shift(-1)
+weekly["n_days_plus_1"] = weekly.groupby("permno")["n_days"].shift(-1)
+
+# Optional: validity flag for next-week return
+weekly["valid_R_i_w_plus_1"] = weekly["n_days_plus_1"] >= 3
+
+# If you want only rows with a valid next-week return:
+weekly = weekly[weekly["valid_R_i_w_plus_1"]].copy()
 
 # =========================================================
 # Final diagnostics
