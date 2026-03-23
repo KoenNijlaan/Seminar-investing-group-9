@@ -4,7 +4,7 @@ if (!requireNamespace("arrow", quietly = TRUE)) {
 
 library(arrow)
 
-input_dir <- "data_raw/intraday_etf"
+input_dir <- "data_raw/intraday_etfs"
 output_dir <- "data_intermediate/converted_parquet_etf"
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
