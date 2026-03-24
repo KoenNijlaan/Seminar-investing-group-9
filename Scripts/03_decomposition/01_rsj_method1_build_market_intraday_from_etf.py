@@ -2,30 +2,21 @@ from pathlib import Path
 import sys
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
 
 
 # =========================
 # User settings
 # =========================
-STOCK_DIR = Path("data_intermediate/converted_parquet")
-MARKET_FILE = Path("data_intermediate/market_intraday_spy.parquet")
+INPUT_DIR = Path("data_intermediate/converted_parquet_etf")
+OUTPUT_FILE = Path("data_intermediate/market_intraday_spy.parquet")
 
-OUTPUT_INTRADAY = Path("data_intermediate/intraday_decomposed_method1.parquet")
-OUTPUT_BETAS = Path("data_intermediate/rolling_betas_method1.parquet")
-OUTPUT_WEEKLY_COUNTS = Path("data_intermediate/intraday_decomposed_method1_weekly_counts.parquet")
+TARGET_SYMBOL = "SPY"
+MIN_DAILY_OBS = 40
 
-ROLLING_WEEKS = 4
-MIN_OBS_FOR_BETA = 40          # only estimate/use beta if overlap > 40
-MIN_WEEKLY_OBS = 40            # keep stock-week only if n_obs_total > 40
-MIN_WEEKLY_DAYS = 3            # keep stock-week only if n_days >= 3
-
-# Candidate column names
-PERMNO_CANDIDATES = ["permno"]
+SYMBOL_CANDIDATES = ["sym_root", "symbol", "ticker", "tic"]
 DATE_CANDIDATES = ["date", "trading_date"]
-RETURN_CANDIDATES = ["ret", "return", "r", "intraday_ret", "ret_5m"]
-INTERVAL_CANDIDATES = ["interval", "interval_id", "bar", "k"]
-TIME_CANDIDATES = ["time", "timestamp", "datetime"]
+RETURNS_VECTOR_CANDIDATES = ["returns_5m", "ret_5m_series", "intraday_returns"]
+NOBS_CANDIDATES = ["n_obs", "n_intervals"]
 
 
 def find_first_existing(columns, candidates):
@@ -33,16 +24,6 @@ def find_first_existing(columns, candidates):
         if c in columns:
             return c
     return None
-
-
-def detect_stock_columns(columns):
-    return {
-        "permno_col": find_first_existing(columns, PERMNO_CANDIDATES),
-        "date_col": find_first_existing(columns, DATE_CANDIDATES),
-        "ret_col": find_first_existing(columns, RETURN_CANDIDATES),
-        "interval_col": find_first_existing(columns, INTERVAL_CANDIDATES),
-        "time_col": find_first_existing(columns, TIME_CANDIDATES),
-    }
 
 
 def normalize_date(series):
@@ -54,113 +35,125 @@ def normalize_date(series):
     return s.dt.normalize()
 
 
-def normalize_time(series):
-    s = pd.to_datetime(series, errors="coerce")
-    try:
-        s = s.dt.tz_localize(None)
-    except (TypeError, AttributeError):
-        pass
-    return s.dt.strftime("%H:%M:%S")
+def extract_return_vector(x):
+    if x is None:
+        return []
 
-
-def make_week(series):
-    # Keep identical across all scripts in the project
-    s = pd.to_datetime(series, errors="coerce")
-    return s.dt.to_period("W-SUN").dt.end_time.dt.normalize()
-
-
-def ols_beta(y, x):
-    valid = np.isfinite(y) & np.isfinite(x)
-    y = y[valid]
-    x = x[valid]
-
-    n = len(y)
-    if n <= MIN_OBS_FOR_BETA:
-        return np.nan, n
-
-    denom = np.dot(x, x)
-    if denom <= 0:
-        return np.nan, n
-
-    beta = np.dot(x, y) / denom
-    return float(beta), int(n)
-
-
-def load_one_stock_file(file_path, detected):
-    table = pq.read_table(file_path)
-    df = table.to_pandas()
-
-    permno_col = detected["permno_col"]
-    date_col = detected["date_col"]
-    ret_col = detected["ret_col"]
-    interval_col = detected["interval_col"]
-    time_col = detected["time_col"]
-
-    if permno_col is None or date_col is None or ret_col is None:
-        raise ValueError(
-            f"Missing required columns in {file_path.name}. "
-            f"Detected={detected}, available={list(df.columns)}"
-        )
-
-    out = pd.DataFrame()
-    out["permno"] = pd.to_numeric(df[permno_col], errors="coerce")
-    out["date"] = normalize_date(df[date_col])
-    out["ret"] = pd.to_numeric(df[ret_col], errors="coerce")
-
-    if interval_col is not None:
-        out["interval"] = pd.to_numeric(df[interval_col], errors="coerce")
-    elif time_col is not None:
-        temp = pd.DataFrame({
-            "date": out["date"],
-            "time": normalize_time(df[time_col]),
-        })
-        temp = temp.sort_values(["date", "time"]).reset_index(drop=True)
-        out = out.reset_index(drop=True)
-        out["interval"] = temp.groupby("date").cumcount() + 1
+    if isinstance(x, np.ndarray):
+        vals = x.tolist()
+    elif isinstance(x, (list, tuple)):
+        vals = list(x)
     else:
-        raise ValueError(
-            f"No interval/time column found in {file_path.name}. "
-            f"Available columns: {list(df.columns)}"
-        )
+        return []
 
-    out = out.dropna(subset=["permno", "date", "interval", "ret"]).copy()
-    out["permno"] = out["permno"].astype("int64")
-    out["interval"] = out["interval"].astype("int64")
-    out["week"] = make_week(out["date"])
-
+    out = []
+    for v in vals:
+        try:
+            fv = float(v)
+            out.append(fv if np.isfinite(fv) else np.nan)
+        except Exception:
+            out.append(np.nan)
     return out
 
 
-def load_all_stocks(stock_dir):
-    stock_files = sorted(stock_dir.glob("*.parquet"))
-    if not stock_files:
-        raise FileNotFoundError(f"No stock parquet files found in {stock_dir}")
+def expand_one_row(row, date_col, returns_col):
+    date_val = row[date_col]
+    returns_vec = extract_return_vector(row[returns_col])
 
-    first_cols = pq.read_table(stock_files[0]).schema.names
-    detected = detect_stock_columns(first_cols)
+    if len(returns_vec) == 0:
+        return None
 
-    print("Detected stock columns:")
-    print(detected)
+    return pd.DataFrame({
+        "date": [date_val] * len(returns_vec),
+        "interval": np.arange(1, len(returns_vec) + 1, dtype=int),
+        "market_ret": returns_vec
+    })
+
+
+def main():
+    if not INPUT_DIR.exists():
+        raise FileNotFoundError(f"Input directory does not exist: {INPUT_DIR}")
+
+    files = sorted(INPUT_DIR.glob("*.parquet"))
+    if not files:
+        raise FileNotFoundError(f"No parquet files found in: {INPUT_DIR}")
+
+    first_df = pd.read_parquet(files[0])
+    first_cols = list(first_df.columns)
+
+    symbol_col = find_first_existing(first_cols, SYMBOL_CANDIDATES)
+    date_col = find_first_existing(first_cols, DATE_CANDIDATES)
+    returns_col = find_first_existing(first_cols, RETURNS_VECTOR_CANDIDATES)
+    nobs_col = find_first_existing(first_cols, NOBS_CANDIDATES)
+
+    if symbol_col is None:
+        raise ValueError(f"Could not find symbol column. Found columns: {first_cols}")
+    if date_col is None:
+        raise ValueError(f"Could not find date column. Found columns: {first_cols}")
+    if returns_col is None:
+        raise ValueError(
+            f"Could not find intraday returns vector column. "
+            f"Expected one of {RETURNS_VECTOR_CANDIDATES}. Found columns: {first_cols}"
+        )
+
+    print("Detected ETF columns:")
+    print({
+        "symbol_col": symbol_col,
+        "date_col": date_col,
+        "returns_col": returns_col,
+        "nobs_col": nobs_col,
+    })
 
     parts = []
-    for i, file_path in enumerate(stock_files, start=1):
-        print(f"[{i}/{len(stock_files)}] Loading {file_path.name}")
+
+    for i, file_path in enumerate(files, start=1):
+        if i % 200 == 0 or i == 1:
+            print(f"[{i}/{len(files)}] Processing {file_path.name}")
+
         try:
-            part = load_one_stock_file(file_path, detected)
-            parts.append(part)
+            df = pd.read_parquet(file_path)
         except Exception as e:
             print(f"  Skipping {file_path.name}: {e}")
+            continue
+
+        if symbol_col not in df.columns or date_col not in df.columns or returns_col not in df.columns:
+            continue
+
+        df = df[df[symbol_col].astype(str).str.upper() == TARGET_SYMBOL].copy()
+        if df.empty:
+            continue
+
+        df[date_col] = normalize_date(df[date_col])
+
+        if nobs_col is not None and nobs_col in df.columns:
+            df[nobs_col] = pd.to_numeric(df[nobs_col], errors="coerce")
+            df = df[df[nobs_col] >= MIN_DAILY_OBS].copy()
+            if df.empty:
+                continue
+
+        expanded_rows = []
+        for _, row in df.iterrows():
+            expanded = expand_one_row(row, date_col, returns_col)
+            if expanded is not None and not expanded.empty:
+                expanded_rows.append(expanded)
+
+        if not expanded_rows:
+            continue
+
+        out = pd.concat(expanded_rows, ignore_index=True)
+        out = out.dropna(subset=["date", "interval", "market_ret"]).copy()
+
+        if not out.empty:
+            parts.append(out)
 
     if not parts:
-        raise ValueError("No stock files could be loaded.")
+        raise ValueError(
+            "No SPY intraday observations found after filtering. "
+            "Check whether converted_parquet_etf contains SPY rows with returns_5m."
+        )
 
-    stocks = pd.concat(parts, ignore_index=True)
-    stocks = stocks.sort_values(["permno", "date", "interval"]).reset_index(drop=True)
-    return stocks
+    market = pd.concat(parts, ignore_index=True)
 
-
-def load_market(market_file):
-    market = pd.read_parquet(market_file)
     market["date"] = normalize_date(market["date"])
     market["interval"] = pd.to_numeric(market["interval"], errors="coerce")
     market["market_ret"] = pd.to_numeric(market["market_ret"], errors="coerce")
@@ -168,155 +161,27 @@ def load_market(market_file):
     market = market.dropna(subset=["date", "interval", "market_ret"]).copy()
     market["interval"] = market["interval"].astype("int64")
 
-    # Force one observation per date-interval
     market = (
         market.sort_values(["date", "interval"])
               .drop_duplicates(subset=["date", "interval"], keep="first")
               .reset_index(drop=True)
     )
-    return market
 
+    daily_counts = market.groupby("date", as_index=False).agg(n_obs=("interval", "count"))
+    valid_dates = daily_counts[daily_counts["n_obs"] >= MIN_DAILY_OBS]["date"]
+    market = market[market["date"].isin(valid_dates)].copy()
 
-def estimate_rolling_betas(merged):
-    unique_weeks = np.sort(merged["week"].dropna().unique())
-    week_to_pos = {w: i for i, w in enumerate(unique_weeks)}
+    market = market.sort_values(["date", "interval"]).reset_index(drop=True)
 
-    merged = merged.copy()
-    merged["week_pos"] = merged["week"].map(week_to_pos)
-
-    results = []
-
-    for permno, g in merged.groupby("permno", sort=True):
-        g = g.sort_values(["date", "interval"]).copy()
-        perm_weeks = np.sort(g["week"].unique())
-
-        for w in perm_weeks:
-            w_pos = week_to_pos[w]
-            start_pos = w_pos - ROLLING_WEEKS
-            end_pos = w_pos - 1
-
-            if end_pos < 0:
-                continue
-
-            window_weeks = unique_weeks[max(0, start_pos): end_pos + 1]
-            hist = g[g["week"].isin(window_weeks)]
-
-            beta_hat, n_obs_beta = ols_beta(
-                hist["ret"].to_numpy(dtype=float),
-                hist["market_ret"].to_numpy(dtype=float)
-            )
-
-            results.append({
-                "permno": int(permno),
-                "week": pd.Timestamp(w),
-                "beta_hat": beta_hat,
-                "n_obs_beta": int(n_obs_beta),
-                "n_weeks_used": int(len(window_weeks)),
-            })
-
-    betas = pd.DataFrame(results)
-    if betas.empty:
-        raise ValueError("No rolling betas could be estimated.")
-
-    # Keep only usable betas
-    betas = betas[
-        betas["beta_hat"].notna() &
-        (betas["n_obs_beta"] > MIN_OBS_FOR_BETA)
-    ].copy()
-
-    betas = betas.sort_values(["permno", "week"]).reset_index(drop=True)
-    return betas
-
-
-def main():
-    if not STOCK_DIR.exists():
-        raise FileNotFoundError(f"Stock input directory does not exist: {STOCK_DIR}")
-    if not MARKET_FILE.exists():
-        raise FileNotFoundError(f"Market file does not exist: {MARKET_FILE}")
-
-    print("Loading stock data...")
-    stocks = load_all_stocks(STOCK_DIR)
-
-    print("Loading market data...")
-    market = load_market(MARKET_FILE)
-
-    # Exact alignment on stock grid
-    merged = stocks.merge(
-        market,
-        on=["date", "interval"],
-        how="inner",
-        validate="many_to_one"
-    )
-
-    merged = merged.dropna(subset=["permno", "date", "interval", "ret", "market_ret", "week"]).copy()
-    merged = merged.sort_values(["permno", "date", "interval"]).reset_index(drop=True)
-
-    print("Estimating rolling betas...")
-    betas = estimate_rolling_betas(merged)
-
-    print("Merging betas back to intraday panel...")
-    decomp = merged.merge(
-        betas[["permno", "week", "beta_hat", "n_obs_beta"]],
-        on=["permno", "week"],
-        how="inner",
-        validate="many_to_one"
-    )
-
-    # Decomposition
-    decomp["ret_sys"] = decomp["beta_hat"] * decomp["market_ret"]
-    decomp["ret_idio"] = decomp["ret"] - decomp["ret_sys"]
-
-    # Weekly quality filter
-    weekly_counts = (
-        decomp.groupby(["permno", "week"], as_index=False)
-              .agg(
-                  n_days=("date", "nunique"),
-                  n_obs_total=("ret", lambda x: int(np.isfinite(pd.to_numeric(x, errors="coerce")).sum())),
-                  beta_hat=("beta_hat", "first"),
-                  n_obs_beta=("n_obs_beta", "first"),
-              )
-    )
-
-    weekly_counts["keep_week"] = (
-        (weekly_counts["n_obs_total"] > MIN_WEEKLY_OBS) &
-        (weekly_counts["n_days"] >= MIN_WEEKLY_DAYS)
-    )
-
-    decomp = decomp.merge(
-        weekly_counts[["permno", "week", "n_days", "n_obs_total", "keep_week"]],
-        on=["permno", "week"],
-        how="left",
-        validate="many_to_one"
-    )
-
-    decomp = decomp[decomp["keep_week"]].copy()
-
-    # Final column order
-    keep_cols = [
-        "permno", "date", "week", "interval",
-        "ret", "market_ret", "beta_hat",
-        "ret_sys", "ret_idio",
-        "n_days", "n_obs_total"
-    ]
-    decomp = decomp[keep_cols].sort_values(["permno", "date", "interval"]).reset_index(drop=True)
-
-    # Keep only retained weekly summaries
-    weekly_counts = weekly_counts[weekly_counts["keep_week"]].copy()
-    weekly_counts = weekly_counts.sort_values(["permno", "week"]).reset_index(drop=True)
-
-    # Save
-    OUTPUT_INTRADAY.parent.mkdir(parents=True, exist_ok=True)
-    decomp.to_parquet(OUTPUT_INTRADAY, index=False)
-    betas.to_parquet(OUTPUT_BETAS, index=False)
-    weekly_counts.to_parquet(OUTPUT_WEEKLY_COUNTS, index=False)
+    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    market.to_parquet(OUTPUT_FILE, index=False)
 
     print("\nDone.")
-    print(f"Intraday decomposed rows: {len(decomp):,}")
-    print(f"Rolling betas rows: {len(betas):,}")
-    print(f"Retained stock-weeks: {len(weekly_counts):,}")
-    print(f"Intraday output: {OUTPUT_INTRADAY}")
-    print(f"Betas output: {OUTPUT_BETAS}")
-    print(f"Weekly counts output: {OUTPUT_WEEKLY_COUNTS}")
+    print(f"Rows written: {len(market):,}")
+    print(f"Unique dates: {market['date'].nunique():,}")
+    print(f"Output: {OUTPUT_FILE}")
+    print("\nPreview:")
+    print(market.head())
 
 
 if __name__ == "__main__":
