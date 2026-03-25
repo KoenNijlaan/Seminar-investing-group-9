@@ -167,28 +167,7 @@ If you only need the key files for empirical analysis, focus on these:
 - data_intermediate/regression_panels/panel_step3.parquet
 	- Final merged panel for predictive regressions.
 
-## 4) Methodology Summary (Concise)
-
-### 4.1 Baseline RSJ
-For each stock-day, intraday returns are used to compute realized variance and positive/negative semivariance. RSJ is the normalized difference between positive and negative semivariance. Daily RSJ is then averaged within week to obtain weekly RSJ.
-
-### 4.2 Baseline RES
-RES is built from the lower tail of intraday returns (baseline alpha = 2.5%), scaled by intraday frequency with exponent H (baseline H = 0.5). Daily RES is aggregated to weekly by averaging across trading days. A 1% tail and alternative H estimators are considered as robustness checks.
-
-### 4.3 Systematic vs Idiosyncratic RES
-Using a high-frequency market model, intraday stock returns are split into market-driven and residual components via rolling betas. RES is computed separately for each component and then aggregated to weekly frequency.
-
-### 4.4 Two RSJ Decompositions
-- Method 1 (before RSJ): decompose intraday returns first, then compute RSJ separately for systematic and idiosyncratic return components.
-- Method 2 (after RSJ): first compute weekly RSJ, then regress stock RSJ on market RSJ with rolling windows; fitted part is systematic and residual part is idiosyncratic.
-
-### 4.5 Predictive Tests
-The project evaluates predictability with:
-- Weekly quintile portfolio sorts (EW and VW), including long-short spreads with sign conventions tied to RSJ and RES predictions.
-- Weekly cross-sectional predictive regressions in Fama-MacBeth style, with Newey-West inference over time.
-- Interaction tests for recession states and limits-to-arbitrage proxies (for example illiquidity), to compare risk-based vs mispricing-based interpretations.
-
-## 5) Practical Run Order
+## 4) Practical Run Order
 
 A practical full run order is:
 
@@ -200,7 +179,7 @@ A practical full run order is:
 6. Scripts/06_analysis (when populated)
 7. Scripts/07_output (when populated)
 
-## 6) Important Notes on Paths and Reproducibility
+## 5) Important Notes on Paths and Reproducibility
 
 Most scripts use hardcoded input/output paths, so consistency matters.
 
