@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
+import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
 
 
 # =========================
@@ -11,13 +11,12 @@ INPUT_DIR = Path("data_intermediate/converted_parquet_etf")
 OUTPUT_FILE = Path("data_intermediate/market_intraday_spy.parquet")
 
 TARGET_SYMBOL = "SPY"
+MIN_DAILY_OBS = 40
 
-# Candidate column names
 SYMBOL_CANDIDATES = ["sym_root", "symbol", "ticker", "tic"]
 DATE_CANDIDATES = ["date", "trading_date"]
-RETURN_CANDIDATES = ["ret", "return", "r", "intraday_ret", "ret_5m"]
-INTERVAL_CANDIDATES = ["interval", "interval_id", "bar", "k"]
-TIME_CANDIDATES = ["time", "timestamp", "datetime"]
+RETURNS_VECTOR_CANDIDATES = ["returns_5m", "ret_5m_series", "intraday_returns"]
+NOBS_CANDIDATES = ["n_obs", "n_intervals"]
 
 
 def find_first_existing(columns, candidates):
@@ -27,76 +26,48 @@ def find_first_existing(columns, candidates):
     return None
 
 
-def detect_columns(columns):
-    symbol_col = find_first_existing(columns, SYMBOL_CANDIDATES)
-    date_col = find_first_existing(columns, DATE_CANDIDATES)
-    ret_col = find_first_existing(columns, RETURN_CANDIDATES)
-    interval_col = find_first_existing(columns, INTERVAL_CANDIDATES)
-    time_col = find_first_existing(columns, TIME_CANDIDATES)
-
-    return {
-        "symbol_col": symbol_col,
-        "date_col": date_col,
-        "ret_col": ret_col,
-        "interval_col": interval_col,
-        "time_col": time_col,
-    }
-
-
 def normalize_date(series):
-    # Handles strings, timestamps, timezone-aware timestamps
-    return pd.to_datetime(series, errors="coerce").dt.date
+    s = pd.to_datetime(series, errors="coerce")
+    try:
+        s = s.dt.tz_localize(None)
+    except (TypeError, AttributeError):
+        pass
+    return s.dt.normalize()
 
 
-def normalize_time(series):
-    x = pd.to_datetime(series, errors="coerce")
-    return x.dt.strftime("%H:%M:%S")
+def extract_return_vector(x):
+    if x is None:
+        return []
+
+    if isinstance(x, np.ndarray):
+        vals = x.tolist()
+    elif isinstance(x, (list, tuple)):
+        vals = list(x)
+    else:
+        return []
+
+    out = []
+    for v in vals:
+        try:
+            fv = float(v)
+            out.append(fv if np.isfinite(fv) else np.nan)
+        except Exception:
+            out.append(np.nan)
+    return out
 
 
-def process_one_file(file_path, detected):
-    table = pq.read_table(file_path)
-    df = table.to_pandas()
+def expand_one_row(row, date_col, returns_col):
+    date_val = row[date_col]
+    returns_vec = extract_return_vector(row[returns_col])
 
-    symbol_col = detected["symbol_col"]
-    date_col = detected["date_col"]
-    ret_col = detected["ret_col"]
-    interval_col = detected["interval_col"]
-    time_col = detected["time_col"]
-
-    # Keep only SPY
-    df = df[df[symbol_col].astype(str).str.upper() == TARGET_SYMBOL].copy()
-    if df.empty:
+    if len(returns_vec) == 0:
         return None
 
-    # Date
-    df["date"] = normalize_date(df[date_col])
-
-    # Interval logic
-    if interval_col is not None:
-        df["interval"] = df[interval_col]
-    elif time_col is not None:
-        df["time"] = normalize_time(df[time_col])
-        # dense rank of intraday timestamps within day
-        df = df.sort_values(["date", "time"])
-        df["interval"] = df.groupby("date").cumcount() + 1
-    else:
-        raise ValueError(
-            f"No interval/time column found in {file_path.name}. "
-            f"Available columns: {list(df.columns)}"
-        )
-
-    # Return
-    df["market_ret"] = pd.to_numeric(df[ret_col], errors="coerce")
-
-    # Keep clean output
-    keep_cols = ["date", "interval", "market_ret"]
-    if time_col is not None and "time" in df.columns:
-        keep_cols.append("time")
-
-    out = df[keep_cols].copy()
-    out = out.dropna(subset=["date", "interval", "market_ret"])
-
-    return out
+    return pd.DataFrame({
+        "date": [date_val] * len(returns_vec),
+        "interval": np.arange(1, len(returns_vec) + 1, dtype=int),
+        "market_ret": returns_vec
+    })
 
 
 def main():
@@ -107,73 +78,110 @@ def main():
     if not files:
         raise FileNotFoundError(f"No parquet files found in: {INPUT_DIR}")
 
-    # Detect columns from first file
-    first_table = pq.read_table(files[0])
-    first_columns = first_table.schema.names
-    detected = detect_columns(first_columns)
+    first_df = pd.read_parquet(files[0])
+    first_cols = list(first_df.columns)
 
-    if detected["symbol_col"] is None:
+    symbol_col = find_first_existing(first_cols, SYMBOL_CANDIDATES)
+    date_col = find_first_existing(first_cols, DATE_CANDIDATES)
+    returns_col = find_first_existing(first_cols, RETURNS_VECTOR_CANDIDATES)
+    nobs_col = find_first_existing(first_cols, NOBS_CANDIDATES)
+
+    if symbol_col is None:
+        raise ValueError(f"Could not find symbol column. Found columns: {first_cols}")
+    if date_col is None:
+        raise ValueError(f"Could not find date column. Found columns: {first_cols}")
+    if returns_col is None:
         raise ValueError(
-            f"Could not find symbol column. Expected one of {SYMBOL_CANDIDATES}. "
-            f"Found columns: {first_columns}"
+            f"Could not find intraday returns vector column. "
+            f"Expected one of {RETURNS_VECTOR_CANDIDATES}. Found columns: {first_cols}"
         )
 
-    if detected["date_col"] is None:
-        raise ValueError(
-            f"Could not find date column. Expected one of {DATE_CANDIDATES}. "
-            f"Found columns: {first_columns}"
-        )
+    print("Detected ETF columns:")
+    print({
+        "symbol_col": symbol_col,
+        "date_col": date_col,
+        "returns_col": returns_col,
+        "nobs_col": nobs_col,
+    })
 
-    if detected["ret_col"] is None:
-        raise ValueError(
-            f"Could not find return column. Expected one of {RETURN_CANDIDATES}. "
-            f"Found columns: {first_columns}\n\n"
-            "This usually means your ETF parquet files contain daily aggregates "
-            "(like rv/res/rquantile) instead of true intraday returns."
-        )
-
-    if detected["interval_col"] is None and detected["time_col"] is None:
-        raise ValueError(
-            f"Could not find interval/time column. Expected one of "
-            f"{INTERVAL_CANDIDATES + TIME_CANDIDATES}. "
-            f"Found columns: {first_columns}"
-        )
-
-    print("Detected columns:")
-    print(detected)
-
-    all_parts = []
-    n_kept_files = 0
+    parts = []
 
     for i, file_path in enumerate(files, start=1):
-        print(f"[{i}/{len(files)}] Processing {file_path.name}")
+        if i % 200 == 0 or i == 1:
+            print(f"[{i}/{len(files)}] Processing {file_path.name}")
+
         try:
-            part = process_one_file(file_path, detected)
-            if part is not None and not part.empty:
-                all_parts.append(part)
-                n_kept_files += 1
+            df = pd.read_parquet(file_path)
         except Exception as e:
             print(f"  Skipping {file_path.name}: {e}")
+            continue
 
-    if not all_parts:
+        if symbol_col not in df.columns or date_col not in df.columns or returns_col not in df.columns:
+            continue
+
+        df = df[df[symbol_col].astype(str).str.upper() == TARGET_SYMBOL].copy()
+        if df.empty:
+            continue
+
+        df[date_col] = normalize_date(df[date_col])
+
+        if nobs_col is not None and nobs_col in df.columns:
+            df[nobs_col] = pd.to_numeric(df[nobs_col], errors="coerce")
+            df = df[df[nobs_col] >= MIN_DAILY_OBS].copy()
+            if df.empty:
+                continue
+
+        expanded_rows = []
+        for _, row in df.iterrows():
+            expanded = expand_one_row(row, date_col, returns_col)
+            if expanded is not None and not expanded.empty:
+                expanded_rows.append(expanded)
+
+        if not expanded_rows:
+            continue
+
+        out = pd.concat(expanded_rows, ignore_index=True)
+        out = out.dropna(subset=["date", "interval", "market_ret"]).copy()
+
+        if not out.empty:
+            parts.append(out)
+
+    if not parts:
         raise ValueError(
-            "No SPY intraday observations were found. "
-            "Check whether the ETF parquet files actually contain SPY and intraday returns."
+            "No SPY intraday observations found after filtering. "
+            "Check whether converted_parquet_etf contains SPY rows with returns_5m."
         )
 
-    market = pd.concat(all_parts, ignore_index=True)
+    market = pd.concat(parts, ignore_index=True)
 
-    # Final cleaning
-    market = market.drop_duplicates(subset=["date", "interval"])
+    market["date"] = normalize_date(market["date"])
+    market["interval"] = pd.to_numeric(market["interval"], errors="coerce")
+    market["market_ret"] = pd.to_numeric(market["market_ret"], errors="coerce")
+
+    market = market.dropna(subset=["date", "interval", "market_ret"]).copy()
+    market["interval"] = market["interval"].astype("int64")
+
+    market = (
+        market.sort_values(["date", "interval"])
+              .drop_duplicates(subset=["date", "interval"], keep="first")
+              .reset_index(drop=True)
+    )
+
+    daily_counts = market.groupby("date", as_index=False).agg(n_obs=("interval", "count"))
+    valid_dates = daily_counts[daily_counts["n_obs"] >= MIN_DAILY_OBS]["date"]
+    market = market[market["date"].isin(valid_dates)].copy()
+
     market = market.sort_values(["date", "interval"]).reset_index(drop=True)
 
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     market.to_parquet(OUTPUT_FILE, index=False)
 
     print("\nDone.")
-    print(f"Files with SPY data used: {n_kept_files}")
     print(f"Rows written: {len(market):,}")
+    print(f"Unique dates: {market['date'].nunique():,}")
     print(f"Output: {OUTPUT_FILE}")
+    print("\nPreview:")
+    print(market.head())
 
 
 if __name__ == "__main__":
