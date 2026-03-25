@@ -7,7 +7,7 @@ import numpy as np
 # =========================================================
 STOCK_DIR = Path("data_intermediate/converted_parquet")
 ETF_DIR = Path("data_intermediate/converted_parquet_etf")
-OUTPUT_DIR = Path("data_intermediate/res_daily_split")
+OUTPUT_DIR = Path("data_intermediate/decomposition/res_decomposition/res_daily_split")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 ALPHA = 0.025

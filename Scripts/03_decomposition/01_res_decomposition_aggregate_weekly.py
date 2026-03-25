@@ -4,8 +4,8 @@ import pandas as pd
 # -----------------------------
 # Paths
 # -----------------------------
-input_dir = Path("data_intermediate/res_daily_split")
-output_dir = Path("data_intermediate/weekly_data")
+input_dir = Path("data_intermediate/decomposition/res_decomposition/res_daily_split")
+output_dir = Path("data_intermediate/decomposition/res_decomposition/res_weekly_split")
 output_dir.mkdir(parents=True, exist_ok=True)
 
 files = sorted(input_dir.glob("*.parquet"))

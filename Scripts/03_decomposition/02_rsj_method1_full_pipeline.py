@@ -11,9 +11,9 @@ import pandas as pd
 STOCK_DIR = Path("data_intermediate/converted_parquet")
 ETF_DIR = Path("data_intermediate/converted_parquet_etf")
 
-DAILY_OUTPUT = Path("data_intermediate/rsj_daily/rsj_method1_daily.parquet")
-WEEKLY_OUTPUT = Path("data_intermediate/rsj_weekly/rsj_method1_weekly.parquet")
-BETAS_OUTPUT = Path("data_intermediate/rolling_betas_method1.parquet")
+DAILY_OUTPUT = Path("data_intermediate/rsj_daily/decomposition/method1/rsj_method1_daily.parquet")
+WEEKLY_OUTPUT = Path("data_intermediate/rsj_weekly/decomposition/method1/rsj_method1_weekly.parquet")
+BETAS_OUTPUT = Path("data_intermediate/decomposition/method1/rolling_betas_method1.parquet")
 
 TARGET_SYMBOL = "SPY"
 ROLLING_WEEKS = 4

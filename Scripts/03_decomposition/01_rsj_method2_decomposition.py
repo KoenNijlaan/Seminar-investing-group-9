@@ -30,7 +30,7 @@ def parse_week_column(s: pd.Series) -> pd.Series:
 rsj_path = Path("data_intermediate/rsj_weekly/rsj_weekly.parquet")
 market_path = Path("data_intermediate/market_weekly_rsj/spy_weekly_rsj.parquet")
 
-output_dir = Path("data_intermediate/decomposition")
+output_dir = Path("data_intermediate/decomposition/method2")
 output_dir.mkdir(parents=True, exist_ok=True)
 
 output_path = output_dir / "rsj_method2_spy.parquet"
