@@ -16,15 +16,15 @@ DAILY_OUTPUT_DIR = Path("data_intermediate/decomposition/method1/rsj_daily")
 WEEKLY_OUTPUT_FILE = Path("data_intermediate/decomposition/method1/rsj_method1_weekly.parquet")
 BETAS_OUTPUT_FILE = Path("data_intermediate/decomposition/method1/rolling_betas_method1.parquet")
 
-WORK_DB = Path("data_intermediate/rsj_method1_working.sqlite")
+WORK_DB = Path("data_intermediate/decomposition/method1/rsj_method1_working.sqlite")
 
 RET_COL = "returns_5m"
 NOBS_COL = "n_obs"
 
 LOOKBACK_WEEKS = 4
 MIN_DAY_OBS = 80
-MIN_BETA_OBS = 320   # 4 weeks * 80 aligned obs
-MIN_WEEKLY_OBS = 80
+MIN_BETA_OBS = 160   # 4 weeks * 40 aligned obs
+MIN_WEEKLY_OBS = 40
 MIN_WEEKLY_DAYS = 1
 
 
@@ -79,18 +79,20 @@ def align_vectors(stock_r, market_r):
     return s[mask], m[mask]
 
 
-def compute_beta_sufficient_stats(stock_r, market_r):
+def compute_alpha_beta_sufficient_stats(stock_r, market_r):
     s, m = align_vectors(stock_r, market_r)
     if len(s) == 0:
-        return 0.0, 0.0, 0
+        return 0.0, 0.0, 0.0, 0.0, 0
 
+    sx = float(np.sum(m))
+    sy = float(np.sum(s))
     sxy = float(np.dot(m, s))
     sxx = float(np.dot(m, m))
     n = int(len(s))
-    return sxy, sxx, n
+    return sx, sy, sxy, sxx, n
 
 
-def split_returns(stock_r, market_r, beta):
+def split_returns(stock_r, market_r, alpha, beta):
     stock_r = np.asarray(stock_r, dtype=float)
     market_r = np.asarray(market_r, dtype=float)
 
@@ -101,11 +103,11 @@ def split_returns(stock_r, market_r, beta):
     stock_r = stock_r[:n]
     market_r = market_r[:n]
 
-    if pd.isna(beta):
+    if pd.isna(alpha) or pd.isna(beta):
         nan_arr = np.full(n, np.nan)
         return nan_arr, nan_arr
 
-    r_sys = beta * market_r
+    r_sys = alpha + beta * market_r
     r_idio = stock_r - r_sys
 
     invalid = ~np.isfinite(stock_r) | ~np.isfinite(market_r)
@@ -162,6 +164,8 @@ def init_db(conn):
         CREATE TABLE IF NOT EXISTS weekly_stats (
             permno    INTEGER NOT NULL,
             week_idx  INTEGER NOT NULL,
+            sx        REAL NOT NULL,
+            sy        REAL NOT NULL,
             sxy       REAL NOT NULL,
             sxx       REAL NOT NULL,
             n_valid   INTEGER NOT NULL,
@@ -173,6 +177,7 @@ def init_db(conn):
         CREATE TABLE IF NOT EXISTS betas (
             permno    INTEGER NOT NULL,
             week_idx  INTEGER NOT NULL,
+            alpha_hf  REAL,
             beta_hf   REAL,
             PRIMARY KEY (permno, week_idx)
         )
@@ -186,9 +191,11 @@ def upsert_weekly_stats(conn, records):
         return
 
     conn.executemany("""
-        INSERT INTO weekly_stats (permno, week_idx, sxy, sxx, n_valid)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO weekly_stats (permno, week_idx, sx, sy, sxy, sxx, n_valid)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(permno, week_idx) DO UPDATE SET
+            sx = weekly_stats.sx + excluded.sx,
+            sy = weekly_stats.sy + excluded.sy,
             sxy = weekly_stats.sxy + excluded.sxy,
             sxx = weekly_stats.sxx + excluded.sxx,
             n_valid = weekly_stats.n_valid + excluded.n_valid
@@ -201,8 +208,8 @@ def insert_betas(conn, records):
         return
 
     conn.executemany("""
-        INSERT OR REPLACE INTO betas (permno, week_idx, beta_hf)
-        VALUES (?, ?, ?)
+        INSERT OR REPLACE INTO betas (permno, week_idx, alpha_hf, beta_hf)
+        VALUES (?, ?, ?, ?)
     """, records)
     conn.commit()
 
@@ -279,9 +286,9 @@ def main():
     week_to_idx = {w: i for i, w in enumerate(all_weeks)}
 
     # -----------------------------------------------------
-    # PASS 1: weekly sufficient stats for rolling beta
+    # PASS 1: weekly sufficient stats for rolling alpha/beta
     # -----------------------------------------------------
-    print("\nPASS 1: Building weekly beta statistics...")
+    print("\nPASS 1: Building weekly alpha/beta statistics...")
 
     for i, (stock_file, trade_date) in enumerate(stock_file_meta, start=1):
         if i % 250 == 0 or i == 1 or i == len(stock_file_meta):
@@ -308,8 +315,8 @@ def main():
         for row in stock_df.itertuples(index=False):
             permno = int(row.permno)
             stock_returns = extract_return_vector(getattr(row, RET_COL))
-            sxy, sxx, n_valid = compute_beta_sufficient_stats(stock_returns, market_returns)
-            records.append((permno, week_idx, sxy, sxx, n_valid))
+            sx, sy, sxy, sxx, n_valid = compute_alpha_beta_sufficient_stats(stock_returns, market_returns)
+            records.append((permno, week_idx, sx, sy, sxy, sxx, n_valid))
 
         upsert_weekly_stats(conn, records)
 
@@ -318,12 +325,12 @@ def main():
             gc.collect()
 
     # -----------------------------------------------------
-    # Compute rolling betas
+    # Compute rolling alphas and betas
     # -----------------------------------------------------
-    print("\nComputing rolling weekly betas...")
+    print("\nComputing rolling weekly alpha/beta...")
 
     weekly_stats_df = pd.read_sql_query(
-        "SELECT permno, week_idx, sxy, sxx, n_valid FROM weekly_stats ORDER BY permno, week_idx",
+        "SELECT permno, week_idx, sx, sy, sxy, sxx, n_valid FROM weekly_stats ORDER BY permno, week_idx",
         conn
     )
 
@@ -332,36 +339,53 @@ def main():
 
     for j, (permno, g) in enumerate(weekly_stats_df.groupby("permno"), start=1):
         if j % 5000 == 0 or j == 1 or j == unique_permnos:
-            print(f"Beta progress: {j}/{unique_permnos} permnos")
+            print(f"Alpha/Beta progress: {j}/{unique_permnos} permnos")
 
         wk_dict = {
-            int(r.week_idx): (float(r.sxy), float(r.sxx), int(r.n_valid))
+            int(r.week_idx): (float(r.sx), float(r.sy), float(r.sxy), float(r.sxx), int(r.n_valid))
             for r in g.itertuples(index=False)
         }
 
         for week_idx in sorted(wk_dict.keys()):
             if week_idx < LOOKBACK_WEEKS:
+                alpha = np.nan
                 beta = np.nan
             else:
                 prev_idx = range(week_idx - LOOKBACK_WEEKS, week_idx)
 
+                sum_sx = 0.0
+                sum_sy = 0.0
                 sum_sxy = 0.0
                 sum_sxx = 0.0
                 sum_n = 0
 
                 for pidx in prev_idx:
                     if pidx in wk_dict:
-                        sxy, sxx, n_valid = wk_dict[pidx]
+                        sx, sy, sxy, sxx, n_valid = wk_dict[pidx]
+                        sum_sx += sx
+                        sum_sy += sy
                         sum_sxy += sxy
                         sum_sxx += sxx
                         sum_n += n_valid
 
-                if sum_n < MIN_BETA_OBS or sum_sxx == 0:
+                if sum_n < MIN_BETA_OBS:
+                    alpha = np.nan
                     beta = np.nan
                 else:
-                    beta = sum_sxy / sum_sxx
+                    denom = sum_sxx - (sum_sx * sum_sx) / sum_n
+                    if denom == 0:
+                        alpha = np.nan
+                        beta = np.nan
+                    else:
+                        beta = (sum_sxy - (sum_sx * sum_sy) / sum_n) / denom
+                        alpha = (sum_sy - beta * sum_sx) / sum_n
 
-            beta_records.append((int(permno), int(week_idx), float(beta) if pd.notna(beta) else None))
+            beta_records.append((
+                int(permno),
+                int(week_idx),
+                float(alpha) if pd.notna(alpha) else None,
+                float(beta) if pd.notna(beta) else None
+            ))
 
         if j % 5000 == 0:
             insert_betas(conn, beta_records)
@@ -371,11 +395,11 @@ def main():
     insert_betas(conn, beta_records)
 
     betas_df = pd.read_sql_query(
-        "SELECT permno, week_idx, beta_hf FROM betas ORDER BY permno, week_idx",
+        "SELECT permno, week_idx, alpha_hf, beta_hf FROM betas ORDER BY permno, week_idx",
         conn
     )
     betas_df["week"] = betas_df["week_idx"].map(lambda i: all_weeks[int(i)].end_time.normalize())
-    betas_df = betas_df[["permno", "week", "beta_hf"]]
+    betas_df = betas_df[["permno", "week", "alpha_hf", "beta_hf"]]
     betas_df.to_parquet(BETAS_OUTPUT_FILE, index=False)
 
     del weekly_stats_df, betas_df
@@ -407,10 +431,13 @@ def main():
 
         if current_week_idx != week_idx:
             beta_week_df = pd.read_sql_query(
-                f"SELECT permno, beta_hf FROM betas WHERE week_idx = {week_idx}",
+                f"SELECT permno, alpha_hf, beta_hf FROM betas WHERE week_idx = {week_idx}",
                 conn
             )
-            beta_map_for_week = dict(zip(beta_week_df["permno"], beta_week_df["beta_hf"]))
+            beta_map_for_week = {
+                int(r.permno): (r.alpha_hf, r.beta_hf)
+                for r in beta_week_df.itertuples(index=False)
+            }
             current_week_idx = week_idx
 
         daily_rows = []
@@ -418,9 +445,9 @@ def main():
         for row in stock_df.itertuples(index=False):
             permno = int(row.permno)
             stock_returns = extract_return_vector(getattr(row, RET_COL))
-            beta = beta_map_for_week.get(permno, np.nan)
+            alpha, beta = beta_map_for_week.get(permno, (np.nan, np.nan))
 
-            r_sys, r_idio = split_returns(stock_returns, market_returns, beta)
+            r_sys, r_idio = split_returns(stock_returns, market_returns, alpha, beta)
 
             # aligned obs count
             n_obs = int(np.sum(np.isfinite(r_sys))) if len(r_sys) > 0 else 0
@@ -432,6 +459,7 @@ def main():
                 "permno": permno,
                 "date": trade_date,
                 "week": week.end_time.normalize(),
+                "alpha_hf": alpha,
                 "beta_hf": beta,
                 "n_obs": n_obs,
                 "rv_pos_sys": rv_pos_sys,
@@ -485,7 +513,7 @@ def main():
     weekly_rows = []
 
     for (permno, week_idx), rec in weekly_agg.items():
-        if rec["n_obs_total"] < MIN_WEEKLY_OBS:
+        if rec["n_obs_total"] <= MIN_WEEKLY_OBS:
             continue
         if rec["n_days"] < MIN_WEEKLY_DAYS:
             continue
