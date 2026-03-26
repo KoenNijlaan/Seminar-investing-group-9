@@ -10,11 +10,11 @@ import pandas as pd
 # Settings
 # =========================================================
 STOCK_DIR = Path("data_intermediate/converted_parquet")
-MARKET_FILE = Path("data_intermediate/market_intraday_spy.parquet")
+MARKET_FILE = Path("data_intermediate/market_returns/market_intraday_spy.parquet")
 
-DAILY_OUTPUT_DIR = Path("data_intermediate/rsj_daily")
-WEEKLY_OUTPUT_FILE = Path("data_intermediate/rsj_weekly/rsj_method1_weekly.parquet")
-BETAS_OUTPUT_FILE = Path("data_intermediate/rolling_betas_method1.parquet")
+DAILY_OUTPUT_DIR = Path("data_intermediate/decomposition/method1/rsj_daily")
+WEEKLY_OUTPUT_FILE = Path("data_intermediate/decomposition/method1/rsj_method1_weekly.parquet")
+BETAS_OUTPUT_FILE = Path("data_intermediate/decomposition/method1/rolling_betas_method1.parquet")
 
 WORK_DB = Path("data_intermediate/rsj_method1_working.sqlite")
 
@@ -43,7 +43,7 @@ def normalize_date_scalar(x):
 
 
 def make_week_from_date(ts):
-    return pd.Timestamp(ts).to_period("W-FRI")
+    return pd.Timestamp(ts).to_period("W-TUE")
 
 
 def extract_return_vector(x):
