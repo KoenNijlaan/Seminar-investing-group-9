@@ -13,8 +13,8 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 ALPHA = 0.025
 H = 0.5
 LOOKBACK_WEEKS = 4
-MIN_DAY_OBS = 40
-MIN_BETA_OBS = 160   # 4 weeks * 40 aligned observations
+MIN_DAY_OBS = 80
+MIN_BETA_OBS = 320   # 4 weeks * 80 aligned observations
 
 RET_COL = "returns_5m"
 NOBS_COL = "n_obs"

@@ -56,7 +56,7 @@ for i, file_path in enumerate(files, start=1):
         continue
 
     # Keep days with enough intraday observations
-    df = df[df["n_obs"] >= 40].copy()
+    df = df[df["n_obs"] >= 80].copy()
     if df.empty:
         continue
 
@@ -83,8 +83,8 @@ spy_weekly = (
     )
 )
 
-# Keep weeks with at least 3 valid days
-spy_weekly = spy_weekly[spy_weekly["n_days"] >= 3].copy()
+# Keep weeks with at least 1 valid day
+spy_weekly = spy_weekly[spy_weekly["n_days"] >= 1].copy()
 
 print("\nPreview:")
 print(spy_weekly.head())

@@ -22,10 +22,10 @@ RET_COL = "returns_5m"
 NOBS_COL = "n_obs"
 
 LOOKBACK_WEEKS = 4
-MIN_DAY_OBS = 40
-MIN_BETA_OBS = 160   # 4 weeks * 40 aligned obs
-MIN_WEEKLY_OBS = 40
-MIN_WEEKLY_DAYS = 3
+MIN_DAY_OBS = 80
+MIN_BETA_OBS = 320   # 4 weeks * 80 aligned obs
+MIN_WEEKLY_OBS = 80
+MIN_WEEKLY_DAYS = 1
 
 
 # =========================================================
@@ -485,7 +485,7 @@ def main():
     weekly_rows = []
 
     for (permno, week_idx), rec in weekly_agg.items():
-        if rec["n_obs_total"] <= MIN_WEEKLY_OBS:
+        if rec["n_obs_total"] < MIN_WEEKLY_OBS:
             continue
         if rec["n_days"] < MIN_WEEKLY_DAYS:
             continue

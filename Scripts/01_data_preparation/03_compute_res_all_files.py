@@ -37,7 +37,7 @@ for i, file_path in enumerate(files, start=1):
     df = pd.read_parquet(file_path)
 
     # Keep only stock-days with sufficient intraday observations
-    df = df[df["n_obs"] >= 40].copy()
+    df = df[df["n_obs"] >= 80].copy()
 
     df["res_2p5"] = df["returns_5m"].apply(
         lambda x: compute_res(x, alpha=0.025, H=0.5)
