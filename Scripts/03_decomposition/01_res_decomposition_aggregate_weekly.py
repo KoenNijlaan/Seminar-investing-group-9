@@ -29,7 +29,7 @@ for i, file_path in enumerate(files, start=1):
         continue
 
     df["date"] = pd.to_datetime(df["date"])
-    df["week"] = df["date"].dt.to_period("W-FRI").dt.end_time.dt.normalize()
+    df["week"] = df["date"].dt.to_period("W-TUE").dt.end_time.dt.normalize()
 
     # aggregate within file first
     weekly_part = (

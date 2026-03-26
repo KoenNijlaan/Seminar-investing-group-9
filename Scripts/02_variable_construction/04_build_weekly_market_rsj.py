@@ -70,8 +70,8 @@ if not parts:
 
 spy_daily = pd.concat(parts, ignore_index=True)
 
-# Week ending Friday
-spy_daily["week"] = spy_daily["date"].dt.to_period("W-FRI").dt.end_time.dt.normalize()
+# Week ending Tuesday (includes Tuesday close)
+spy_daily["week"] = spy_daily["date"].dt.to_period("W-TUE").dt.end_time.dt.normalize()
 
 spy_weekly = (
     spy_daily

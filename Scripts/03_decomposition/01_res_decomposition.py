@@ -171,7 +171,7 @@ print(f"Last overlap:  {common_names[-1]}")
 
 # Global week index based on overlapping file dates
 all_weeks = sorted({
-    pd.Timestamp(Path(fname).stem).to_period("W-FRI")
+    pd.Timestamp(Path(fname).stem).to_period("W-TUE")
     for fname in common_names
 })
 week_to_idx = {w: i for i, w in enumerate(all_weeks)}
@@ -210,7 +210,7 @@ for i, fname in enumerate(common_names, start=1):
 
     # all rows in a daily file should share the same trading date
     trade_date = pd.to_datetime(stock_df["date"].iloc[0])
-    week = trade_date.to_period("W-FRI")
+    week = trade_date.to_period("W-TUE")
 
     for row in stock_df.itertuples(index=False):
         permno = row.permno
@@ -308,7 +308,7 @@ for i, fname in enumerate(common_names, start=1):
     market_returns = extract_market_returns(etf_df, etf_file.name)
 
     trade_date = pd.to_datetime(stock_df["date"].iloc[0])
-    week = trade_date.to_period("W-FRI")
+    week = trade_date.to_period("W-TUE")
 
     beta_vals = []
     res_total_vals = []

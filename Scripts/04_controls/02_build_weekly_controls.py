@@ -68,7 +68,7 @@ def parse_date_col(s: pd.Series) -> pd.Series:
 
 def make_week_from_date(s: pd.Series) -> pd.Series:
     s = pd.to_datetime(s)
-    return s.dt.to_period("W-FRI").dt.end_time.dt.normalize()
+    return s.dt.to_period("W-TUE").dt.end_time.dt.normalize()
 
 def safe_to_numeric(df: pd.DataFrame, cols):
     for c in cols:
