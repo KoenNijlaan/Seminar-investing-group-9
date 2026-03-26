@@ -106,11 +106,11 @@ weekly["n_days_idio"] = weekly["res_idio_count"]
 # -----------------------------
 # Filtering
 # -----------------------------
-# Keep weeks with at least 1 valid daily observation for sys and idio
+# Keep weeks with at least 3 valid daily observations for sys and idio
 # (this is usually the binding requirement once beta-based decomposition starts)
 weekly = weekly[
-    (weekly["n_days_sys"] >= 1) &
-    (weekly["n_days_idio"] >= 1)
+    (weekly["n_days_sys"] >= 3) &
+    (weekly["n_days_idio"] >= 3)
 ].copy()
 
 weekly = weekly.dropna(

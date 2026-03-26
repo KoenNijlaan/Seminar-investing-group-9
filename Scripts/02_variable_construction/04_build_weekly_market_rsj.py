@@ -83,8 +83,8 @@ spy_weekly = (
     )
 )
 
-# Keep weeks with at least 1 valid day
-spy_weekly = spy_weekly[spy_weekly["n_days"] >= 1].copy()
+# Keep weeks with at least 3 valid days
+spy_weekly = spy_weekly[spy_weekly["n_days"] >= 3].copy()
 
 print("\nPreview:")
 print(spy_weekly.head())

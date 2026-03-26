@@ -58,7 +58,7 @@ weekly["res_weekly_2p5"] = weekly["res_sum"] / weekly["res_count"]
 weekly["n_days"] = weekly["res_count"]
 
 weekly = weekly.dropna(subset=["res_weekly_2p5"])
-weekly = weekly[weekly["n_days"] >= 1].copy()
+weekly = weekly[weekly["n_days"] >= 3].copy()
 
 weekly = weekly[["permno", "week", "res_weekly_2p5", "n_days", "n_obs_total"]]
 

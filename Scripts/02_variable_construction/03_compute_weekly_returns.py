@@ -12,7 +12,7 @@ import numpy as np
 # - ret_crsp is stored in PERCENT units in the raw files.
 # - Therefore, ret_crsp must be divided by 100 before compounding.
 # - Week definition matches RSJ and RES: W-TUE (includes Tuesday close).
-# - We require at least 1 valid daily return per stock-week.
+# - We require at least 3 valid daily returns per stock-week.
 # =========================================================
 
 # =========================================================
@@ -90,8 +90,8 @@ weekly = (
 
 weekly = weekly.sort_values(["permno", "week"]).reset_index(drop=True)
 
-# Keep only stock-weeks with at least 1 valid daily return
-weekly = weekly[weekly["n_days"] >= 1].copy()
+# Keep only stock-weeks with at least 3 valid daily returns
+weekly = weekly[weekly["n_days"] >= 3].copy()
 
 # =========================================================
 # Create next-week return R_i_w_plus_1
@@ -102,7 +102,7 @@ weekly["R_i_w_plus_1"] = weekly.groupby("permno")["R_i_w"].shift(-1)
 weekly["n_days_plus_1"] = weekly.groupby("permno")["n_days"].shift(-1)
 
 # Optional: validity flag for next-week return
-weekly["valid_R_i_w_plus_1"] = weekly["n_days_plus_1"] >= 1
+weekly["valid_R_i_w_plus_1"] = weekly["n_days_plus_1"] >= 3
 
 # If you want only rows with a valid next-week return:
 weekly = weekly[weekly["valid_R_i_w_plus_1"]].copy()

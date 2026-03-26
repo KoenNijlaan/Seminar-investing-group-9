@@ -25,7 +25,7 @@ LOOKBACK_WEEKS = 4
 MIN_DAY_OBS = 80
 MIN_BETA_OBS = 160   # 4 weeks * 40 aligned obs
 MIN_WEEKLY_OBS = 40
-MIN_WEEKLY_DAYS = 1
+MIN_WEEKLY_DAYS = 3
 
 
 # =========================================================
