@@ -22,7 +22,7 @@ RET_COL = "returns_5m"
 NOBS_COL = "n_obs"
 
 LOOKBACK_WEEKS = 4
-MIN_DAY_OBS = 80
+MIN_DAY_OBS = 40
 MIN_BETA_OBS = 160   # 4 weeks * 40 aligned obs
 MIN_WEEKLY_OBS = 40
 MIN_WEEKLY_DAYS = 3

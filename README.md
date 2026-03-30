@@ -290,7 +290,7 @@ Run from repository root in this order:
 2. `python Scripts/02_variable_construction/02_aggregate_weekly_res.py`
 3. `python Scripts/02_variable_construction/03_compute_weekly_returns.py`
 4. `python Scripts/02_variable_construction/04_build_weekly_market_rsj.py`
-5. `python Scripts/03_decomposition/01_rsj_method1_build_market_intraday_from_etf.py`
+5. `python Scripts/03_decomposition 01_rsj_method1_build_market_intraday_from_etf.py`
 6. `python Scripts/03_decomposition/01_res_decomposition.py`
 7. `python Scripts/03_decomposition/01_res_decomposition_aggregate_weekly.py`
 8. `python Scripts/03_decomposition/02_rsj_method1_decomposition.py`
