@@ -154,8 +154,8 @@ If only re-running from the weekly aggregation step onward (e.g. after a paramet
 - **RES total**: `res_total_p025` in `weekly_res_sys_idio.parquet` equals the non-decomposed weekly RES (systematic + idiosyncratic log returns sum back to the total by construction). This is also saved separately as `res_weekly.parquet`.
 
 Runnen: 
-	02_04_weekly_market_rsj.
-	03_01_rsj_method1_build.
+	02_04_weekly_market_rsj. -
+	03_01_rsj_method1_build. - 
 	03_01_rsj_method2_decomp.
 	03_02_res_decomposition_final.
 	03_02_rsj_method1_decompostition.
