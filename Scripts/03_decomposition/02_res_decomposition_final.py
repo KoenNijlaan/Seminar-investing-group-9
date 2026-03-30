@@ -13,6 +13,10 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 OUTPUT_FILE = OUTPUT_DIR / "weekly_res_sys_idio.parquet"
 
+RES_WEEKLY_DIR = ROOT / "data_intermediate" / "res_weekly"
+RES_WEEKLY_DIR.mkdir(parents=True, exist_ok=True)
+RES_WEEKLY_FILE = RES_WEEKLY_DIR / "res_weekly.parquet"
+
 P = 0.025
 H = 0.5
 EXPECTED_INTERVALS = 78
@@ -306,8 +310,18 @@ def main():
 
     weekly.to_parquet(OUTPUT_FILE, index=False)
 
+    res_weekly = weekly[["permno", "week_end", "n_valid_days", "c_total", "res_total_p025"]].copy()
+    res_weekly = res_weekly.rename(columns={
+        "week_end": "week",
+        "n_valid_days": "n_days",
+        "c_total": "n_obs_total",
+        "res_total_p025": "res_weekly",
+    })
+    res_weekly.to_parquet(RES_WEEKLY_FILE, index=False)
+
     print("\nDone.")
     print(f"Saved: {OUTPUT_FILE}")
+    print(f"Saved: {RES_WEEKLY_FILE}")
     print(f"Rows: {len(weekly):,}")
     print(f"Weeks: {weekly['week_end'].nunique():,}")
     print(f"Stocks: {weekly['permno'].nunique():,}")

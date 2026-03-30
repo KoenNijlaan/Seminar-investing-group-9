@@ -56,7 +56,7 @@ for i, file_path in enumerate(files, start=1):
         continue
 
     # Keep days with enough intraday observations
-    df = df[df["n_obs"] >= 40].copy()
+    df = df[df["n_obs"] >= 80].copy()
     if df.empty:
         continue
 

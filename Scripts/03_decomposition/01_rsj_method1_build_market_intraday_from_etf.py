@@ -11,7 +11,7 @@ INPUT_DIR = Path("data_intermediate/converted_parquet_etf")
 OUTPUT_FILE = Path("data_intermediate/market_returns/market_intraday_spy.parquet")
 
 TARGET_SYMBOL = "SPY"
-MIN_DAILY_OBS = 40
+MIN_DAILY_OBS = 80
 
 
 
@@ -58,18 +58,21 @@ def extract_return_vector(x):
     return out
 
 
-def expand_one_row(row, date_col, returns_col):
+def expand_one_row(row, date_col, returns_col, nobs_col=None):
     date_val = row[date_col]
     returns_vec = extract_return_vector(row[returns_col])
 
     if len(returns_vec) == 0:
         return None
 
-    return pd.DataFrame({
+    df = pd.DataFrame({
         "date": [date_val] * len(returns_vec),
         "interval": np.arange(1, len(returns_vec) + 1, dtype=int),
         "market_ret": returns_vec
     })
+    if nobs_col is not None and nobs_col in row.index:
+        df["n_obs"] = row[nobs_col]
+    return df
 
 
 def main():
@@ -127,15 +130,9 @@ def main():
 
         df[date_col] = normalize_date(df[date_col])
 
-        if nobs_col is not None and nobs_col in df.columns:
-            df[nobs_col] = pd.to_numeric(df[nobs_col], errors="coerce")
-            df = df[df[nobs_col] >= MIN_DAILY_OBS].copy()
-            if df.empty:
-                continue
-
         expanded_rows = []
         for _, row in df.iterrows():
-            expanded = expand_one_row(row, date_col, returns_col)
+            expanded = expand_one_row(row, date_col, returns_col, nobs_col)
             if expanded is not None and not expanded.empty:
                 expanded_rows.append(expanded)
 
@@ -169,9 +166,10 @@ def main():
               .reset_index(drop=True)
     )
 
-    daily_counts = market.groupby("date", as_index=False).agg(n_obs=("interval", "count"))
-    valid_dates = daily_counts[daily_counts["n_obs"] >= MIN_DAILY_OBS]["date"]
-    market = market[market["date"].isin(valid_dates)].copy()
+    if "n_obs" in market.columns:
+        valid_dates = market.groupby("date")["n_obs"].first()
+        valid_dates = valid_dates[valid_dates >= MIN_DAILY_OBS].index
+        market = market[market["date"].isin(valid_dates)].copy()
 
     market = market.sort_values(["date", "interval"]).reset_index(drop=True)
 
