@@ -9,7 +9,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[2]
 
 INPUT_DIR = ROOT / "data_intermediate" / "converted_parquet"
-SPY_FILE = ROOT / "data_intermediate" / "market_intraday_spy.parquet"
+SPY_FILE = ROOT / "data_intermediate" / "market_returns" / "market_intraday_spy.parquet"
 OUTPUT_DIR = ROOT / "data_intermediate" / "decomposition" / "log_returns_split_spy_daily"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
