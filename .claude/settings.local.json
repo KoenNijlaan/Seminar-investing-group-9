@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import pandas as pd; df = pd.read_parquet\\(''data_raw/wrds/ff_daily_factors_1992_2024.parquet''\\); print\\(df.columns.tolist\\(\\)\\); print\\(df.head\\(2\\)\\)\")",
+      "Bash(python -c \"import pandas as pd; df = pd.read_parquet\\(''data_raw/wrds/crsp_daily_rsj_sample_1992_2024.parquet''\\); print\\(df.columns.tolist\\(\\)\\); print\\(df.dtypes\\); print\\(df.head\\(2\\)\\)\")",
+      "Bash(python -c \":*)",
+      "Bash(python Scripts/05_dataset_construction/01_build_data_panel.py)"
+    ]
+  }
+}

@@ -155,7 +155,7 @@ crsp = pd.read_parquet(crsp_path)
 
 needed_cols = [
     "permno", "date", "ret", "retx", "prc", "vol", "shrout",
-    "me", "dollar_vol"
+    "me", "dollar_vol", "shrcd", "exchcd"
 ]
 existing_cols = [c for c in needed_cols if c in crsp.columns]
 crsp = crsp[existing_cols].copy()
@@ -261,6 +261,8 @@ del mom_daily
 gc.collect()
 
 # Keep only what is needed before IVOL
+# shrcd and exchcd: kept for end-of-week stock info in controls output
+# prc: kept for end-of-week price (for price filter in panel build)
 crsp = crsp[[
     "permno",
     "date",
@@ -268,7 +270,10 @@ crsp = crsp[[
     "me",
     "log_me_daily",
     "log_illiq_daily",
-    "mom_daily"
+    "mom_daily",
+    "prc",
+    "shrcd",
+    "exchcd",
 ]].copy()
 
 crsp.to_parquet(daily_base_path, index=False)
@@ -363,16 +368,15 @@ daily_last = (
         .copy()
 )
 
-weekly_controls = daily_last[[
-    "permno",
-    "week",
-    "log_me_daily",
-    "mom_daily",
-    "log_illiq_daily",
-    "ivol_daily",
-    "me",
-    "date"
-]].copy()
+keep_cols = [
+    "permno", "week", "log_me_daily", "mom_daily", "log_illiq_daily",
+    "ivol_daily", "me", "date",
+]
+for c in ["prc", "shrcd", "exchcd"]:
+    if c in daily_last.columns:
+        keep_cols.append(c)
+
+weekly_controls = daily_last[keep_cols].copy()
 
 weekly_controls = weekly_controls.rename(columns={
     "log_me_daily": "log_me",
@@ -492,20 +496,15 @@ final = rsj_keys.merge(
     validate="one_to_one"
 )
 
-final = final[[
-    "permno",
-    "week",
-    "log_me",
-    "me_raw",
-    "bm",
-    "mom",
-    "rev",
-    "ivol",
-    "illiq",
-    "ret_weekly",
-    "week_last_trading_date",
-]].copy()
+base_cols = [
+    "permno", "week", "log_me", "me_raw", "bm", "mom", "rev",
+    "ivol", "illiq", "ret_weekly", "week_last_trading_date",
+]
+for c in ["prc", "shrcd", "exchcd"]:
+    if c in final.columns:
+        base_cols.append(c)
 
+final = final[base_cols].copy()
 final = final.rename(columns={"log_me": "me"})
 
 print("\nPreview:")
