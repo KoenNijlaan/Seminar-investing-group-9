@@ -11,7 +11,7 @@ import numpy as np
 # IMPORTANT:
 # - ret_crsp is stored in PERCENT units in the raw files.
 # - Therefore, ret_crsp must be divided by 100 before compounding.
-# - Week definition matches RSJ and RES: W-FRI.
+# - Week definition matches RSJ and RES: W-TUE (includes Tuesday close).
 # - We require at least 3 valid daily returns per stock-week.
 # =========================================================
 
@@ -59,8 +59,8 @@ for i, file_path in enumerate(files, start=1):
     df["date"] = pd.to_datetime(df["date"])
     df["permno"] = df["permno"].astype("Int64")
 
-    # Week ending Friday
-    df["week"] = df["date"].dt.to_period("W-FRI").dt.end_time.dt.normalize()
+    # Week ending Tuesday (includes Tuesday close)
+    df["week"] = df["date"].dt.to_period("W-TUE").dt.end_time.dt.normalize()
 
     parts.append(df[["permno", "date", "week", "ret_crsp"]])
 

@@ -23,8 +23,8 @@ for i, file_path in enumerate(files, start=1):
     # Convert date to datetime
     df["date"] = pd.to_datetime(df["date"])
 
-    # Week ending Friday
-    df["week"] = df["date"].dt.to_period("W-FRI").dt.end_time.dt.normalize()
+    # Week ending Tuesday (includes Tuesday close)
+    df["week"] = df["date"].dt.to_period("W-TUE").dt.end_time.dt.normalize()
 
     # Aggregate within this file
     weekly_part = (

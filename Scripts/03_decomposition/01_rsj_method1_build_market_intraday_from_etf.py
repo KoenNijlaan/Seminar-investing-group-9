@@ -8,10 +8,12 @@ import pandas as pd
 # User settings
 # =========================
 INPUT_DIR = Path("data_intermediate/converted_parquet_etf")
-OUTPUT_FILE = Path("data_intermediate/market_intraday_spy.parquet")
+OUTPUT_FILE = Path("data_intermediate/market_returns/market_intraday_spy.parquet")
 
 TARGET_SYMBOL = "SPY"
 MIN_DAILY_OBS = 40
+
+
 
 SYMBOL_CANDIDATES = ["sym_root", "symbol", "ticker", "tic"]
 DATE_CANDIDATES = ["date", "trading_date"]

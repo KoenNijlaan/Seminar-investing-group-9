@@ -31,7 +31,7 @@ def compute_rsj(r):
 # Paths
 # ---------------------------------------------------------
 input_dir = Path("data_intermediate/converted_parquet_etf")
-output_dir = Path("data_intermediate/market_weekly")
+output_dir = Path("data_intermediate/market_weekly_rsj")
 output_dir.mkdir(parents=True, exist_ok=True)
 
 output_path = output_dir / "spy_weekly_rsj.parquet"
@@ -70,8 +70,8 @@ if not parts:
 
 spy_daily = pd.concat(parts, ignore_index=True)
 
-# Week ending Friday
-spy_daily["week"] = spy_daily["date"].dt.to_period("W-FRI").dt.end_time.dt.normalize()
+# Week ending Tuesday (includes Tuesday close)
+spy_daily["week"] = spy_daily["date"].dt.to_period("W-TUE").dt.end_time.dt.normalize()
 
 spy_weekly = (
     spy_daily
