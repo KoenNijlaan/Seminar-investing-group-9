@@ -117,7 +117,7 @@ def discover_files(input_dir: Path) -> pd.DataFrame:
             d = pd.to_datetime(f.stem).normalize()
         except Exception:
             continue
-        week = d.to_period("W-FRI")
+        week = d.to_period("W-TUE")
         rows.append({
             "date": d,
             "week": week,
