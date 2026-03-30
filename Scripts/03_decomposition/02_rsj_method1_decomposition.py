@@ -23,7 +23,7 @@ NOBS_COL = "n_obs"
 
 LOOKBACK_WEEKS = 4
 MIN_DAY_OBS = 80
-MIN_BETA_OBS = 160   # 4 weeks * 40 aligned obs
+MIN_BETA_OBS = 160   # minimum aligned observations in the 4-week lookback
 MIN_WEEKLY_OBS = 40
 MIN_WEEKLY_DAYS = 3
 
@@ -475,22 +475,17 @@ def main():
                 weekly_agg[key] = {
                     "sum_rsj_sys": 0.0,
                     "sum_rsj_idio": 0.0,
-                    "n_days": 0,
+                    "days_seen": set(),
                     "n_obs_total": 0,
-                    "valid_sys_days": 0,
-                    "valid_idio_days": 0,
                 }
 
             rec = weekly_agg[key]
-            if pd.notna(rsj_sys_d):
+            # Use one common D_w set: only days where both daily RSJ components are defined.
+            if pd.notna(rsj_sys_d) and pd.notna(rsj_idio_d):
                 rec["sum_rsj_sys"] += rsj_sys_d
-                rec["valid_sys_days"] += 1
-            if pd.notna(rsj_idio_d):
                 rec["sum_rsj_idio"] += rsj_idio_d
-                rec["valid_idio_days"] += 1
-
-            rec["n_days"] += 1
-            rec["n_obs_total"] += n_obs
+                rec["days_seen"].add(pd.Timestamp(trade_date))
+                rec["n_obs_total"] += n_obs
 
         day_out = pd.DataFrame(daily_rows)
 
@@ -513,11 +508,13 @@ def main():
     weekly_rows = []
 
     for (permno, week_idx), rec in weekly_agg.items():
+        n_unique_days = len(rec["days_seen"])
+
         if rec["n_obs_total"] <= MIN_WEEKLY_OBS:
             continue
-        if rec["n_days"] < MIN_WEEKLY_DAYS:
+        if n_unique_days < MIN_WEEKLY_DAYS:
             continue
-        if rec["valid_sys_days"] == 0 or rec["valid_idio_days"] == 0:
+        if n_unique_days == 0:
             continue
 
         week = all_weeks[week_idx].end_time.normalize()
@@ -525,9 +522,9 @@ def main():
         weekly_rows.append({
             "permno": permno,
             "week": week,
-            "rsj_sys_weekly": rec["sum_rsj_sys"] / rec["valid_sys_days"],
-            "rsj_idio_weekly": rec["sum_rsj_idio"] / rec["valid_idio_days"],
-            "n_days": rec["n_days"],
+            "rsj_sys_weekly": rec["sum_rsj_sys"] / n_unique_days,
+            "rsj_idio_weekly": rec["sum_rsj_idio"] / n_unique_days,
+            "n_days": n_unique_days,
             "n_obs_total": rec["n_obs_total"],
         })
 
