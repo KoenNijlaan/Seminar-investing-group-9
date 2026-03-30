@@ -47,15 +47,29 @@ def to_1d_float_array(x):
 
 
 def simple_to_log_array(x, expected_len=None):
-    """Convert simple returns to log returns."""
+    """
+    Convert simple returns to log returns.
+    Reject the full array if:
+    - wrong length
+    - any non-finite values
+    - any return <= -1
+    """
     arr = to_1d_float_array(x)
     if arr is None:
         return None
+
     if expected_len is not None and len(arr) != expected_len:
         return None
-    arr = np.array(np.log1p(arr), dtype="float64", copy=True)
-    arr[~np.isfinite(arr)] = np.nan
-    return arr
+
+    # reject if any element is missing / non-finite
+    if np.any(~np.isfinite(arr)):
+        return None
+
+    # reject impossible simple returns
+    if np.any(arr <= -1):
+        return None
+
+    return np.log1p(arr)
 
 
 def fit_market_model(stock_arrays, spy_arrays):
