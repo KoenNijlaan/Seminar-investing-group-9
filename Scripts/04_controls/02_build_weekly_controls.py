@@ -2,6 +2,7 @@ from pathlib import Path
 import gc
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 
 # =========================================================
 # PURPOSE
@@ -150,233 +151,262 @@ gc.collect()
 # ---------------------------------------------------------
 # 2) Build daily base controls from CRSP
 # ---------------------------------------------------------
-print("\nLoading CRSP daily...")
-crsp = pd.read_parquet(crsp_path)
-
-needed_cols = [
-    "permno", "date", "ret", "retx", "prc", "vol", "shrout",
-    "me", "dollar_vol", "shrcd", "exchcd"
-]
-existing_cols = [c for c in needed_cols if c in crsp.columns]
-crsp = crsp[existing_cols].copy()
-
-crsp = safe_to_numeric(crsp, ["permno", "ret", "retx", "prc", "vol", "shrout", "me", "dollar_vol"])
-crsp["date"] = parse_date_col(crsp["date"])
-crsp["permno"] = crsp["permno"].astype("Int64")
-
-print("Loading CRSP delist...")
-delist = pd.read_parquet(delist_path)
-if len(delist) > 0:
-    delist = safe_to_numeric(delist, ["permno", "dlret"])
-    delist["dlstdt"] = parse_date_col(delist["dlstdt"])
-    delist["permno"] = delist["permno"].astype("Int64")
-    delist = delist.rename(columns={"dlstdt": "date"})
-    delist = delist[["permno", "date", "dlret"]].copy()
+if daily_base_path.exists():
+    print(f"\nSkipping section 2: {daily_base_path.name} already exists.")
 else:
-    delist = pd.DataFrame(columns=["permno", "date", "dlret"])
+    print("\nLoading CRSP daily...")
+    needed_cols = [
+        "permno", "date", "ret", "retx", "prc", "vol", "shrout",
+        "me", "dollar_vol", "shrcd", "exchcd"
+    ]
+    # Read only the needed columns directly — avoids loading full file then copying
+    available_cols = pq.read_schema(crsp_path).names
+    existing_cols = [c for c in needed_cols if c in available_cols]
+    crsp = pd.read_parquet(crsp_path, columns=existing_cols)
 
-print("Merging delisting returns...")
-crsp = crsp.merge(delist, on=["permno", "date"], how="left")
-del delist
-gc.collect()
+    crsp = safe_to_numeric(crsp, ["permno", "ret", "retx", "prc", "vol", "shrout", "me", "dollar_vol"])
+    crsp["date"] = parse_date_col(crsp["date"])
+    crsp["permno"] = crsp["permno"].astype("Int64")
 
-# Adjusted return
-crsp["ret"] = pd.to_numeric(crsp["ret"], errors="coerce").astype(float)
-crsp["dlret"] = pd.to_numeric(crsp["dlret"], errors="coerce").astype(float)
+    print("Loading CRSP delist...")
+    delist = pd.read_parquet(delist_path)
+    if len(delist) > 0:
+        delist = safe_to_numeric(delist, ["permno", "dlret"])
+        delist["dlstdt"] = parse_date_col(delist["dlstdt"])
+        delist["permno"] = delist["permno"].astype("Int64")
+        delist = delist.rename(columns={"dlstdt": "date"})
+        delist = delist[["permno", "date", "dlret"]].copy()
+    else:
+        delist = pd.DataFrame(columns=["permno", "date", "dlret"])
 
-crsp["ret_adj"] = np.nan
-mask_ret = crsp["ret"].notna()
-mask_dl = crsp["dlret"].notna()
+    print("Merging delisting returns...")
+    crsp = crsp.merge(delist, on=["permno", "date"], how="left")
+    del delist
+    gc.collect()
 
-crsp.loc[mask_ret & ~mask_dl, "ret_adj"] = crsp.loc[mask_ret & ~mask_dl, "ret"]
-crsp.loc[~mask_ret & mask_dl, "ret_adj"] = crsp.loc[~mask_ret & mask_dl, "dlret"]
-crsp.loc[mask_ret & mask_dl, "ret_adj"] = (
-    (1.0 + crsp.loc[mask_ret & mask_dl, "ret"]) *
-    (1.0 + crsp.loc[mask_ret & mask_dl, "dlret"]) - 1.0
-)
+    # Adjusted return
+    crsp["ret"] = pd.to_numeric(crsp["ret"], errors="coerce").astype(float)
+    crsp["dlret"] = pd.to_numeric(crsp["dlret"], errors="coerce").astype(float)
 
-crsp = crsp.dropna(subset=["permno", "date"]).copy()
-crsp = crsp.sort_values(["permno", "date"]).reset_index(drop=True)
+    crsp["ret_adj"] = np.nan
+    mask_ret = crsp["ret"].notna()
+    mask_dl = crsp["dlret"].notna()
 
-print("Constructing daily ME, ILLIQ, MOM...")
-
-# Market equity
-if "me" not in crsp.columns or crsp["me"].isna().all():
-    crsp["me"] = crsp["prc"].abs() * crsp["shrout"]
-
-crsp["me"] = pd.to_numeric(crsp["me"], errors="coerce").astype(float)
-crsp["log_me_daily"] = np.nan
-mask_me = crsp["me"].notna() & (crsp["me"] > 0)
-crsp.loc[mask_me, "log_me_daily"] = np.log(crsp.loc[mask_me, "me"])
-
-# Dollar volume
-if "dollar_vol" not in crsp.columns or crsp["dollar_vol"].isna().all():
-    crsp["dollar_vol"] = crsp["prc"].abs() * crsp["vol"]
-
-crsp["dollar_vol"] = pd.to_numeric(crsp["dollar_vol"], errors="coerce").astype(float)
-crsp["ret_adj"] = pd.to_numeric(crsp["ret_adj"], errors="coerce").astype(float)
-
-crsp["amihud_daily"] = np.nan
-mask_illiq = crsp["dollar_vol"].notna() & (crsp["dollar_vol"] > 0) & crsp["ret_adj"].notna()
-crsp.loc[mask_illiq, "amihud_daily"] = (
-    np.abs(crsp.loc[mask_illiq, "ret_adj"]) / crsp.loc[mask_illiq, "dollar_vol"]
-)
-
-# Rolling illiquidity
-crsp["illiq_daily"] = (
-    crsp.groupby("permno")["amihud_daily"]
-        .rolling(illiq_window, min_periods=illiq_window)
-        .mean()
-        .reset_index(level=0, drop=True)
-)
-
-crsp["illiq_daily"] = pd.to_numeric(crsp["illiq_daily"], errors="coerce").astype(float)
-crsp["log_illiq_daily"] = np.nan
-mask_log_illiq = crsp["illiq_daily"].notna() & (crsp["illiq_daily"] > 0)
-crsp.loc[mask_log_illiq, "log_illiq_daily"] = np.log(crsp.loc[mask_log_illiq, "illiq_daily"])
-
-# Momentum
-print("Computing daily momentum...")
-mom_parts = []
-n_stocks = crsp["permno"].nunique()
-
-for i, (permno, g) in enumerate(crsp.groupby("permno", sort=False), start=1):
-    if i % ivol_progress_every == 0:
-        print(f"Momentum: {i:,} / {n_stocks:,} stocks...")
-
-    g = g.sort_values("date").copy()
-    g["mom_daily"] = rolling_cumret_ex_skip(
-        g["ret_adj"],
-        lookback=mom_lookback_days,
-        skip=mom_skip_days
+    crsp.loc[mask_ret & ~mask_dl, "ret_adj"] = crsp.loc[mask_ret & ~mask_dl, "ret"]
+    crsp.loc[~mask_ret & mask_dl, "ret_adj"] = crsp.loc[~mask_ret & mask_dl, "dlret"]
+    crsp.loc[mask_ret & mask_dl, "ret_adj"] = (
+        (1.0 + crsp.loc[mask_ret & mask_dl, "ret"]) *
+        (1.0 + crsp.loc[mask_ret & mask_dl, "dlret"]) - 1.0
     )
-    mom_parts.append(g[["permno", "date", "mom_daily"]])
 
-mom_daily = pd.concat(mom_parts, ignore_index=True)
-del mom_parts
-gc.collect()
+    crsp = crsp.dropna(subset=["permno", "date"]).copy()
+    crsp = crsp.sort_values(["permno", "date"]).reset_index(drop=True)
 
-crsp = crsp.merge(mom_daily, on=["permno", "date"], how="left", validate="one_to_one")
-del mom_daily
-gc.collect()
+    print("Constructing daily ME, ILLIQ, MOM...")
 
-# Keep only what is needed before IVOL
-# shrcd and exchcd: kept for end-of-week stock info in controls output
-# prc: kept for end-of-week price (for price filter in panel build)
-crsp = crsp[[
-    "permno",
-    "date",
-    "ret_adj",
-    "me",
-    "log_me_daily",
-    "log_illiq_daily",
-    "mom_daily",
-    "prc",
-    "shrcd",
-    "exchcd",
-]].copy()
+    # Market equity
+    if "me" not in crsp.columns or crsp["me"].isna().all():
+        crsp["me"] = crsp["prc"].abs() * crsp["shrout"]
 
-crsp.to_parquet(daily_base_path, index=False)
-print(f"Saved daily base controls: {daily_base_path}")
+    crsp["me"] = pd.to_numeric(crsp["me"], errors="coerce").astype(float)
+    crsp["log_me_daily"] = np.nan
+    mask_me = crsp["me"].notna() & (crsp["me"] > 0)
+    crsp.loc[mask_me, "log_me_daily"] = np.log(crsp.loc[mask_me, "me"])
+
+    # Dollar volume
+    if "dollar_vol" not in crsp.columns or crsp["dollar_vol"].isna().all():
+        crsp["dollar_vol"] = crsp["prc"].abs() * crsp["vol"]
+
+    crsp["dollar_vol"] = pd.to_numeric(crsp["dollar_vol"], errors="coerce").astype(float)
+    crsp["ret_adj"] = pd.to_numeric(crsp["ret_adj"], errors="coerce").astype(float)
+
+    crsp["amihud_daily"] = np.nan
+    mask_illiq = crsp["dollar_vol"].notna() & (crsp["dollar_vol"] > 0) & crsp["ret_adj"].notna()
+    crsp.loc[mask_illiq, "amihud_daily"] = (
+        np.abs(crsp.loc[mask_illiq, "ret_adj"]) / crsp.loc[mask_illiq, "dollar_vol"]
+    )
+
+    # Rolling illiquidity
+    crsp["illiq_daily"] = (
+        crsp.groupby("permno")["amihud_daily"]
+            .rolling(illiq_window, min_periods=illiq_window)
+            .mean()
+            .reset_index(level=0, drop=True)
+    )
+
+    crsp["illiq_daily"] = pd.to_numeric(crsp["illiq_daily"], errors="coerce").astype(float)
+    crsp["log_illiq_daily"] = np.nan
+    mask_log_illiq = crsp["illiq_daily"].notna() & (crsp["illiq_daily"] > 0)
+    crsp.loc[mask_log_illiq, "log_illiq_daily"] = np.log(crsp.loc[mask_log_illiq, "illiq_daily"])
+
+    # Momentum
+    print("Computing daily momentum...")
+    mom_parts = []
+    n_stocks = crsp["permno"].nunique()
+
+    for i, (permno, g) in enumerate(crsp.groupby("permno", sort=False), start=1):
+        if i % ivol_progress_every == 0:
+            print(f"Momentum: {i:,} / {n_stocks:,} stocks...")
+
+        g = g.sort_values("date").copy()
+        g["mom_daily"] = rolling_cumret_ex_skip(
+            g["ret_adj"],
+            lookback=mom_lookback_days,
+            skip=mom_skip_days
+        )
+        mom_parts.append(g[["permno", "date", "mom_daily"]])
+
+    mom_daily = pd.concat(mom_parts, ignore_index=True)
+    del mom_parts
+    gc.collect()
+
+    crsp = crsp.merge(mom_daily, on=["permno", "date"], how="left", validate="one_to_one")
+    del mom_daily
+    gc.collect()
+
+    # Keep only what is needed before IVOL
+    # shrcd and exchcd: kept for end-of-week stock info in controls output
+    # prc: kept for end-of-week price (for price filter in panel build)
+    crsp = crsp[[
+        "permno",
+        "date",
+        "ret_adj",
+        "me",
+        "log_me_daily",
+        "log_illiq_daily",
+        "mom_daily",
+        "prc",
+        "shrcd",
+        "exchcd",
+    ]].copy()
+
+    crsp.to_parquet(daily_base_path, index=False)
+    print(f"Saved daily base controls: {daily_base_path}")
 
 # ---------------------------------------------------------
 # 3) Compute daily IVOL separately
 # ---------------------------------------------------------
-print("\nLoading FF daily factors...")
-ff = pd.read_parquet(ff_path)
-ff = safe_to_numeric(ff, ["mktrf", "smb", "hml", "rf"])
-ff["date"] = parse_date_col(ff["date"])
-ff = ff[["date", "mktrf", "smb", "hml", "rf"]].copy()
+if daily_ivol_path.exists():
+    print(f"\nSkipping section 3: {daily_ivol_path.name} already exists.")
+else:
+    print("\nLoading FF daily factors...")
+    ff = pd.read_parquet(ff_path)
+    ff = safe_to_numeric(ff, ["mktrf", "smb", "hml", "rf"])
+    ff["date"] = parse_date_col(ff["date"])
+    ff = ff[["date", "mktrf", "smb", "hml", "rf"]].copy()
 
-print("Computing daily IVOL...")
-daily_base = pd.read_parquet(daily_base_path)
-daily_base["date"] = parse_date_col(daily_base["date"])
-daily_base["permno"] = pd.to_numeric(daily_base["permno"], errors="coerce").astype("Int64")
+    print("Computing daily IVOL...")
+    daily_base = pd.read_parquet(daily_base_path)
+    daily_base["date"] = parse_date_col(daily_base["date"])
+    daily_base["permno"] = pd.to_numeric(daily_base["permno"], errors="coerce").astype("Int64")
 
-daily_base = daily_base.merge(ff, on="date", how="left", validate="many_to_one")
-del ff
-gc.collect()
+    daily_base = daily_base.merge(ff, on="date", how="left", validate="many_to_one")
+    del ff
+    gc.collect()
 
-ivol_parts = []
-n_stocks = daily_base["permno"].nunique()
+    ivol_parts = []
+    n_stocks = daily_base["permno"].nunique()
 
-for i, (permno, g) in enumerate(daily_base.groupby("permno", sort=False), start=1):
-    if i % ivol_progress_every == 0:
-        print(f"IVOL: {i:,} / {n_stocks:,} stocks...")
+    for i, (permno, g) in enumerate(daily_base.groupby("permno", sort=False), start=1):
+        if i % ivol_progress_every == 0:
+            print(f"IVOL: {i:,} / {n_stocks:,} stocks...")
 
-    g = g.sort_values("date").copy()
+        g = g.sort_values("date").copy()
 
-    ret_adj = pd.to_numeric(g["ret_adj"], errors="coerce").to_numpy(dtype=float)
-    rf = pd.to_numeric(g["rf"], errors="coerce").to_numpy(dtype=float)
-    mktrf = pd.to_numeric(g["mktrf"], errors="coerce").to_numpy(dtype=float)
-    smb = pd.to_numeric(g["smb"], errors="coerce").to_numpy(dtype=float)
-    hml = pd.to_numeric(g["hml"], errors="coerce").to_numpy(dtype=float)
+        ret_adj = pd.to_numeric(g["ret_adj"], errors="coerce").to_numpy(dtype=float)
+        rf = pd.to_numeric(g["rf"], errors="coerce").to_numpy(dtype=float)
+        mktrf = pd.to_numeric(g["mktrf"], errors="coerce").to_numpy(dtype=float)
+        smb = pd.to_numeric(g["smb"], errors="coerce").to_numpy(dtype=float)
+        hml = pd.to_numeric(g["hml"], errors="coerce").to_numpy(dtype=float)
 
-    ivol = compute_ivol_array(
-        ret_adj=ret_adj,
-        rf=rf,
-        mktrf=mktrf,
-        smb=smb,
-        hml=hml,
-        window=ivol_window
-    )
+        ivol = compute_ivol_array(
+            ret_adj=ret_adj,
+            rf=rf,
+            mktrf=mktrf,
+            smb=smb,
+            hml=hml,
+            window=ivol_window
+        )
 
-    ivol_parts.append(
-        pd.DataFrame({
-            "permno": g["permno"].to_numpy(),
-            "date": g["date"].to_numpy(),
-            "ivol_daily": ivol
-        })
-    )
+        ivol_parts.append(
+            pd.DataFrame({
+                "permno": g["permno"].to_numpy(),
+                "date": g["date"].to_numpy(),
+                "ivol_daily": ivol
+            })
+        )
 
-ivol_daily = pd.concat(ivol_parts, ignore_index=True)
-ivol_daily.to_parquet(daily_ivol_path, index=False)
-print(f"Saved daily IVOL: {daily_ivol_path}")
+    ivol_daily = pd.concat(ivol_parts, ignore_index=True)
+    ivol_daily.to_parquet(daily_ivol_path, index=False)
+    print(f"Saved daily IVOL: {daily_ivol_path}")
 
-del ivol_parts
-gc.collect()
+    del ivol_parts
+    gc.collect()
 
 # ---------------------------------------------------------
-# 4) Merge daily base + IVOL, aggregate to weekly
+# 4) Aggregate to weekly — load each subset from disk separately
+#    to avoid merging large frames (which fragments pandas blocks
+#    and causes consolidation OOM errors).
 # ---------------------------------------------------------
 print("\nAggregating daily controls to weekly...")
-daily = pd.read_parquet(daily_base_path)
-daily["date"] = parse_date_col(daily["date"])
-daily["permno"] = pd.to_numeric(daily["permno"], errors="coerce").astype("Int64")
 
-ivol_daily = pd.read_parquet(daily_ivol_path)
-ivol_daily["date"] = parse_date_col(ivol_daily["date"])
-ivol_daily["permno"] = pd.to_numeric(ivol_daily["permno"], errors="coerce").astype("Int64")
-
-daily = daily.merge(ivol_daily, on=["permno", "date"], how="left", validate="one_to_one")
-del ivol_daily
-gc.collect()
-
-daily["week"] = make_week_from_date(daily["date"])
+# 4a) Weekly compounded return — only needs ret_adj
+print("  Computing weekly returns...")
+_ret_cols = ["permno", "date", "ret_adj"]
+_ret = pd.read_parquet(daily_base_path, columns=_ret_cols)
+_ret["permno"] = pd.to_numeric(_ret["permno"], errors="coerce").astype("Int64")
+_ret["date"] = parse_date_col(_ret["date"])
+_ret["week"] = make_week_from_date(_ret["date"])
 
 weekly_ret = (
-    daily.groupby(["permno", "week"], as_index=False)
-        .agg(
-            ret_weekly=("ret_adj", lambda x: np.prod(1.0 + x.dropna()) - 1.0 if x.dropna().size > 0 else np.nan)
-        )
+    _ret[["permno", "week", "ret_adj"]]
+    .groupby(["permno", "week"], as_index=False)
+    .agg(
+        ret_weekly=("ret_adj", lambda x: np.prod(1.0 + x.dropna()) - 1.0 if x.dropna().size > 0 else np.nan)
+    )
+)
+del _ret
+gc.collect()
+
+# 4b) End-of-week snapshot — load base cols + ivol separately, then join
+print("  Building end-of-week snapshot...")
+_snap_base_cols = ["permno", "date", "log_me_daily", "mom_daily", "log_illiq_daily", "me"]
+_avail = pq.read_schema(daily_base_path).names
+for c in ["prc", "shrcd", "exchcd"]:
+    if c in _avail:
+        _snap_base_cols.append(c)
+
+_snap = pd.read_parquet(daily_base_path, columns=_snap_base_cols)
+_snap["permno"] = pd.to_numeric(_snap["permno"], errors="coerce").astype("Int64")
+_snap["date"] = parse_date_col(_snap["date"])
+_snap["week"] = make_week_from_date(_snap["date"])
+
+# Reduce to end-of-week rows BEFORE merging ivol — keeps merge small (~1.6M vs 37M rows)
+# daily_base_path is sorted by (permno, date), so last row per (permno, week) = end-of-week
+_snap = (
+    _snap
+    .drop_duplicates(subset=["permno", "week"], keep="last")
+    .reset_index(drop=True)
 )
 
-daily_last = (
-    daily.sort_values(["permno", "date"])
-        .groupby(["permno", "week"], as_index=False)
-        .tail(1)
-        .copy()
-)
+_ivol = pd.read_parquet(daily_ivol_path, columns=["permno", "date", "ivol_daily"])
+_ivol["permno"] = pd.to_numeric(_ivol["permno"], errors="coerce").astype("Int64")
+_ivol["date"] = parse_date_col(_ivol["date"])
 
-keep_cols = [
-    "permno", "week", "log_me_daily", "mom_daily", "log_illiq_daily",
-    "ivol_daily", "me", "date",
-]
+# Now merge is small_frame × small_frame — no OOM
+daily_last = _snap.merge(_ivol, on=["permno", "date"], how="left")
+del _snap, _ivol
+gc.collect()
+
+keep_cols = ["permno", "week", "log_me_daily", "mom_daily", "log_illiq_daily",
+             "ivol_daily", "me", "date"]
 for c in ["prc", "shrcd", "exchcd"]:
     if c in daily_last.columns:
         keep_cols.append(c)
 
 weekly_controls = daily_last[keep_cols].copy()
+del daily_last
+gc.collect()
 
 weekly_controls = weekly_controls.rename(columns={
     "log_me_daily": "log_me",
@@ -391,8 +421,6 @@ weekly_controls = weekly_controls.merge(weekly_ret, on=["permno", "week"], how="
 weekly_controls = weekly_controls.sort_values(["permno", "week"]).reset_index(drop=True)
 weekly_controls["rev"] = weekly_controls.groupby("permno")["ret_weekly"].shift(1)
 
-del daily
-del daily_last
 del weekly_ret
 gc.collect()
 

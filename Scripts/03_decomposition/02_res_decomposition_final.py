@@ -184,6 +184,9 @@ def aggregate_one_week(week_files: pd.DataFrame, p=P, h=H) -> pd.DataFrame:
     df = pd.concat(parts, ignore_index=True)
     df = df.sort_values(["permno", "date"]).reset_index(drop=True)
 
+    # Recompute week_end from date using W-TUE, overriding whatever is stored in files
+    df["week_end"] = df["date"].dt.to_period("W-TUE").dt.end_time.dt.normalize()
+
     results = []
     grouped = df.groupby(["permno", "sym_root", "week_end"], sort=True)
 
