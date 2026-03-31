@@ -180,3 +180,11 @@ From script imports, you need at least:
 
 If you plan to run WRDS download scripts, ensure WRDS credentials are configured for your environment.
 
+Uitvoeren:
+      01_res_decomposition_log_return.py
+      02_res_decompostition_final.py
+      01_build_weekly_panel.py
+      01_portfolio_sorts.py
+      02_fama_macbeth.py
+      03_wald_tests.py
+      04_crisis_state_fm.py

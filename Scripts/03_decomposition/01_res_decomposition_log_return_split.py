@@ -200,7 +200,7 @@ def discover_stock_files(input_dir: Path):
             dt = pd.to_datetime(path.stem).normalize()
         except Exception:
             continue
-        week = dt.to_period("W-FRI")
+        week = dt.to_period("W-TUE")
         records.append({
             "date": dt,
             "path": path,
@@ -306,7 +306,7 @@ def process_one_week(
     df = df.merge(spy_df, on="date", how="left")
 
     # Build week fields
-    df["week"] = df["date"].dt.to_period("W-FRI")
+    df["week"] = df["date"].dt.to_period("W-TUE")
     df["week_end"] = df["week"].dt.end_time.dt.normalize()
 
     # Valid day = enough trades + both return arrays present
