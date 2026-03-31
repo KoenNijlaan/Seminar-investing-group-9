@@ -74,6 +74,8 @@ SPREAD_DIRECTION = {
 # ============================================================
 def nw_tstat(y: pd.Series, X: pd.DataFrame, maxlags: int) -> dict:
     """OLS with Newey-West standard errors. Returns alpha, t_alpha, betas."""
+    y = pd.Series(np.array(y, dtype=float))
+    X = pd.DataFrame(np.array(X, dtype=float), columns=X.columns)
     mask = y.notna() & X.notna().all(axis=1)
     y_c = y[mask]
     X_c = sm.add_constant(X[mask])
@@ -311,9 +313,9 @@ def run_sort(panel: pd.DataFrame, sort_col: str, ff_weekly: pd.DataFrame,
             "mktrf": ff_a["mktrf_weekly"].values,
             "smb"  : ff_a["smb_weekly"].values,
             "hml"  : ff_a["hml_weekly"].values,
-        }, index=common)
+        })
 
-        ff_res = nw_tstat(pd.Series(excess_ts, index=common), ff_X, NW_LAGS)
+        ff_res = nw_tstat(pd.Series(excess_ts), ff_X, NW_LAGS)
 
         stats = {
             "weighting"      : weighting,
