@@ -10,11 +10,9 @@ Specifications:
   Panel A  — Univariate: each predictor alone
   Panel B1 — RSJ + controls  (M2 decomposition)
   Panel B2 — RES + controls
-  Panel B3 — RSJ_sys + RSJ_idio + RES_sys + RES_idio + controls  (M2)
-  Panel B4 — same but with Method-1 decomposition (rsj_sys_weekly / rsj_idio_weekly)
-  Panel B5 — Full kitchen-sink (all 4 decomposed + controls, M2)
-
-Wald tests (H1-H4) from the proposal are run on Panel B3 / B5.
+  Panel B3 — RSJ + RES together + controls
+  Panel B4 — Decomposed M2 + controls
+  Panel B5 — Decomposed M1 + controls
 
 Controls: log(ME), BM, MOM, REV, log(IVOL), log(ILLIQ)
 All control variables are cross-sectionally winsorized at 1/99 pct each week.
@@ -23,14 +21,14 @@ Output:
   data_final/fama_macbeth/
     fm_results.parquet    — all weekly coefficients (long format)
     fm_summary.csv        — averaged estimates with NW t-stats (one row per spec/variable)
-    fm_wald.csv           — Wald test results (H1-H4)
+
+Wald tests (H1-H4) are run separately in 02b_wald_tests.py.
 """
 
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from scipy import stats as scipy_stats
 
 # ============================================================
 # Settings
@@ -147,26 +145,6 @@ def run_weekly_cross_section(df_week: pd.DataFrame, predictors: list[str]) -> di
     for i, pred in enumerate(predictors):
         out[pred] = float(res.params[i + 1])
     return out
-
-
-# ============================================================
-# Wald tests
-# ============================================================
-def wald_test(mean_vec: np.ndarray, cov_mat: np.ndarray,
-              R: np.ndarray, r: np.ndarray) -> dict:
-    """
-    Wald test: H0: R @ mean_vec = r
-    W = (R b - r)' (R V R')^{-1} (R b - r) ~ chi2(q)
-    """
-    diff = R @ mean_vec - r
-    var  = R @ cov_mat @ R.T
-    try:
-        W = float(diff @ np.linalg.solve(var, diff))
-    except np.linalg.LinAlgError:
-        return {"W": np.nan, "df": len(r), "p_value": np.nan}
-    df = len(r)
-    p  = float(1 - scipy_stats.chi2.cdf(W, df))
-    return {"W": W, "df": df, "p_value": p}
 
 
 # ============================================================
@@ -311,99 +289,8 @@ def main():
             print(f"  {row['label']:<22} {row['mean_bps']:>10.2f} "
                   f"{row['t_stat']:>8.2f}{stars:3} {row['n_weeks']:>8}")
 
-    # ----------------------------------------------------------
-    # Wald tests (H1-H4) on spec B4 (decomposed M2)
-    # ----------------------------------------------------------
-    print("\n\n" + "=" * 90)
-    print("WALD TESTS on spec B4_decomp_m2  (Hypotheses H1-H4)")
-    print("Variables order: [rsj_sys, rsj_idio, res_sys_p025, res_idio_p025, controls...]")
-    print("=" * 90)
-
-    spec_key = "B4_decomp_m2"
-    if spec_key in spec_betas and spec_betas[spec_key]:
-        preds_b4 = SPECS[spec_key]
-        n_preds  = len(preds_b4)
-
-        # Build T × n_preds matrix of weekly betas
-        coef_arrays = []
-        for pred in preds_b4:
-            coef_arrays.append(np.array(spec_betas[spec_key][pred], dtype=float))
-
-        T = len(coef_arrays[0])
-        B = np.column_stack(coef_arrays)  # T × n_preds
-
-        # Mean vector and NW covariance of the mean
-        mean_b = B.mean(axis=0)
-
-        # NW covariance matrix of sqrt(T) * mean_b
-        # Use Newey-West on the multivariate series
-        # Implement manually: Gamma_0 + sum_{l=1}^{L} w_l (Gamma_l + Gamma_l')
-        def nw_cov_matrix(B: np.ndarray, lags: int) -> np.ndarray:
-            """NW covariance matrix of the mean (Bartlett kernel)."""
-            T, k  = B.shape
-            demeaned = B - B.mean(axis=0)
-            S = demeaned.T @ demeaned / T  # Gamma_0
-            for l in range(1, lags + 1):
-                w       = 1 - l / (lags + 1)
-                gamma_l = demeaned[l:].T @ demeaned[:-l] / T
-                S      += w * (gamma_l + gamma_l.T)
-            return S / T  # covariance of the MEAN
-
-        V_mean = nw_cov_matrix(B, NW_LAGS)  # covariance of mean_b
-
-        # Indices of the 4 decomposition predictors
-        idx = {p: i for i, p in enumerate(preds_b4)}
-
-        # H1: beta_rsj_sys = beta_rsj_idio
-        R1 = np.zeros((1, n_preds));
-        R1[0, idx["rsj_sys"]]   =  1
-        R1[0, idx["rsj_idio"]]  = -1
-        r1 = np.zeros(1)
-
-        # H2: beta_res_sys = beta_res_idio
-        R2 = np.zeros((1, n_preds))
-        R2[0, idx["res_sys_p025"]]  =  1
-        R2[0, idx["res_idio_p025"]] = -1
-        r2 = np.zeros(1)
-
-        # H3: beta_res_sys = 0 AND beta_res_idio = 0
-        R3 = np.zeros((2, n_preds))
-        R3[0, idx["res_sys_p025"]]  = 1
-        R3[1, idx["res_idio_p025"]] = 1
-        r3 = np.zeros(2)
-
-        # H4: all 4 decomp betas = 0
-        R4 = np.zeros((4, n_preds))
-        R4[0, idx["rsj_sys"]]       = 1
-        R4[1, idx["rsj_idio"]]      = 1
-        R4[2, idx["res_sys_p025"]]  = 1
-        R4[3, idx["res_idio_p025"]] = 1
-        r4 = np.zeros(4)
-
-        wald_results = []
-        for h_label, R, r in [("H1: β_rsj_sys = β_rsj_idio",       R1, r1),
-                               ("H2: β_res_sys = β_res_idio",       R2, r2),
-                               ("H3: β_res_sys = β_res_idio = 0",  R3, r3),
-                               ("H4: all 4 betas = 0",              R4, r4)]:
-            w = wald_test(mean_b, V_mean, R, r)
-            wald_results.append({
-                "hypothesis": h_label,
-                "W"         : w["W"],
-                "df"        : w["df"],
-                "p_value"   : w["p_value"],
-            })
-            sig = "***" if w["p_value"] < 0.01 else ("**" if w["p_value"] < 0.05
-                  else ("*" if w["p_value"] < 0.10 else ""))
-            print(f"  {h_label:<38}  W={w['W']:7.2f}  df={w['df']}  "
-                  f"p={w['p_value']:.4f} {sig}")
-
-        df_wald = pd.DataFrame(wald_results)
-        df_wald.to_csv(OUTPUT_DIR / "fm_wald.csv", index=False, float_format="%.6f")
-        print(f"\nSaved Wald tests: {OUTPUT_DIR / 'fm_wald.csv'}")
-    else:
-        print(f"  Spec {spec_key} not computed — skipping Wald tests.")
-
     print("\n=== Done ===")
+    print("Run 02b_wald_tests.py to compute H1-H4 Wald tests.")
 
 
 if __name__ == "__main__":
