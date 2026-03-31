@@ -134,8 +134,17 @@ def run_weekly_cross_section(df_week: pd.DataFrame, predictors: list[str]) -> di
     sub = df_week[cols].dropna()
     if len(sub) < MIN_STOCKS:
         return None
-    y = sub["R_i_w_plus_1"].values
-    X = sm.add_constant(sub[predictors].values, has_constant="add")
+
+    # Convert extension dtypes (e.g., pandas Float64) to plain float64 arrays
+    # so statsmodels does not receive object-dtype matrices.
+    y = pd.to_numeric(sub["R_i_w_plus_1"], errors="coerce").to_numpy(dtype=float)
+    X_raw = sub[predictors].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+    X = sm.add_constant(X_raw, has_constant="add")
+
+    # Defensive check in case coercion introduced invalid values.
+    if not np.isfinite(y).all() or not np.isfinite(X).all():
+        return None
+
     try:
         res = sm.OLS(y, X).fit()
     except Exception:
