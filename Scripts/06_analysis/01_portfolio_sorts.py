@@ -395,6 +395,7 @@ def main():
         return
 
     combined = pd.concat(all_results, ignore_index=True)
+    combined["quintile"] = combined["quintile"].astype(str)
 
     # Save combined parquet
     combined_path = OUTPUT_DIR / "sort_results_all.parquet"
