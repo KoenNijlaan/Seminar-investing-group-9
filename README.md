@@ -167,7 +167,7 @@ python Scripts/06_analysis/04_crisis_state_fm.py
 - Main weekly key throughout the final pipeline is `W-TUE` (week ending Tuesday).
 - Minimum daily intraday observations is generally `n_obs >= 80` for RSJ/market/decomposition entry.
 - Weekly stock-level outputs usually enforce `n_days >= 3`.
-- RES split script (`01_res_decomposition_log_return_split.py`) initially labels weeks as `W-FRI`, but the final aggregator (`02_res_decomposition_final.py`) recomputes and stores week endpoints using `W-TUE`.
+- RES split and final aggregation scripts both use `W-TUE` for weekly alignment.
 - `ret_crsp` from intraday parquet is in percent units; weekly return compounding converts by dividing by 100 first.
 
 ## 6) Dependencies
@@ -181,10 +181,10 @@ From script imports, you need at least:
 If you plan to run WRDS download scripts, ensure WRDS credentials are configured for your environment.
 
 Uitvoeren:
-      01_res_decomposition_log_return.py
-      02_res_decompostition_final.py
-      01_build_weekly_panel.py
-      01_portfolio_sorts.py
-      02_fama_macbeth.py
-      03_wald_tests.py
-      04_crisis_state_fm.py
+      Scripts/03_decomposition/01_res_decomposition_log_return_split.py
+      Scripts/03_decomposition/02_res_decomposition_final.py
+      Scripts/05_dataset_construction/01_build_data_panel.py
+      Scripts/06_analysis/01_portfolio_sorts.py
+      Scripts/06_analysis/02_fama_macbeth.py
+      Scripts/06_analysis/03_wald_tests.py
+      Scripts/06_analysis/04_crisis_state_fm.py
