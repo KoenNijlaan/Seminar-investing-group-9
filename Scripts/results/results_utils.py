@@ -49,4 +49,5 @@ def write_csv_and_tex(df: pd.DataFrame, stem: str, float_fmt: str = "%.6f") -> N
     tex_path = TABLES_DIR / f"{stem}.tex"
     df.to_csv(csv_path, index=False, float_format=float_fmt)
     with open(tex_path, "w", encoding="utf-8") as f:
-        f.write(df.to_latex(index=False, escape=False))
+        # Escape LaTeX-sensitive characters (e.g., underscores) in headers/values.
+        f.write(df.to_latex(index=False, escape=True))

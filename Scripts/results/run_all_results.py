@@ -19,6 +19,7 @@ SCRIPTS = [
     "10_figure_predictor_correlation_heatmap.py",
     "11_figure_cross_section_coverage.py",
     "12_figure_signal_distributions.py",
+    "13_figure_cumulative_long_short.py",
 ]
 
 
