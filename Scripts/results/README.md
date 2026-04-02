@@ -20,6 +20,9 @@ This folder contains scripts to build paper-ready tables and figures from existi
 ## Scripts
 
 - `01_table_summary_stats.py`
+- `14_table_sample_coverage_comparison.py`
+	- Uses Bollerslev-overlapping core variables (`rsj_weekly`, controls) for the comparable sample.
+	- Excludes decomposition variables by design.
 - `02_table_portfolio_sorts.py`
 - `03_table_fama_macbeth.py`
 - `04_table_wald.py`

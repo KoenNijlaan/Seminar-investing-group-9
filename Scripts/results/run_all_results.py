@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parent
 
 SCRIPTS = [
     "01_table_summary_stats.py",
+    "14_table_sample_coverage_comparison.py",
     "02_table_portfolio_sorts.py",
     "03_table_fama_macbeth.py",
     "04_table_wald.py",

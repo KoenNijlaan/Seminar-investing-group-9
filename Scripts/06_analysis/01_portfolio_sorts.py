@@ -42,6 +42,11 @@ NW_LAGS              = 6    # Newey-West lags for weekly data
 ANNUALIZE            = 52   # multiply weekly return by this to annualise
 MIN_STOCKS_PER_WEEK  = 50   # drop sort-weeks with fewer eligible stocks
 
+# If True, force all sort variables to use the exact same stock-week sample
+# (intersection of non-missing sort signals + valid next-week return).
+# This improves cross-variable comparability of portfolio-sort results.
+USE_COMMON_SAMPLE    = True
+
 # Variables to sort on (column name → display label)
 SORT_VARIABLES = {
     "rsj_weekly"     : "RSJ Total",
@@ -369,6 +374,25 @@ def main():
         panel["valid_R_i_w_plus_1"] = panel["valid_R_i_w_plus_1"].astype(bool)
     else:
         panel["valid_R_i_w_plus_1"] = panel["R_i_w_plus_1"].notna()
+
+    available_sort_cols = [c for c in SORT_VARIABLES.keys() if c in panel.columns]
+    if USE_COMMON_SAMPLE and available_sort_cols:
+        common_mask = (
+            (panel["valid_R_i_w_plus_1"] == True)
+            & panel["R_i_w_plus_1"].notna()
+        )
+        for c in available_sort_cols:
+            common_mask &= panel[c].notna()
+
+        before_n = len(panel)
+        panel = panel.loc[common_mask].copy()
+        after_n = len(panel)
+        print(
+            "Common-sample mode ON: "
+            f"{after_n:,}/{before_n:,} stock-weeks kept "
+            f"(non-missing on all {len(available_sort_cols)} sort variables)."
+        )
+        print()
 
     print(f"Panel: {len(panel):,} stock-weeks | "
           f"{panel['permno'].nunique():,} stocks | "

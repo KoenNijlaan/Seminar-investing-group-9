@@ -188,3 +188,5 @@ Uitvoeren:
       Scripts/06_analysis/02_fama_macbeth.py
       Scripts/06_analysis/03_wald_tests.py
       Scripts/06_analysis/04_crisis_state_fm.py
+
+
