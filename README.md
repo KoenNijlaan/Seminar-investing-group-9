@@ -104,6 +104,7 @@ Applied filters in panel build:
 | `02_fama_macbeth.py` | `data_final/panel/weekly_panel.parquet` | `data_final/fama_macbeth/fm_results.parquet` + `data_final/fama_macbeth/fm_summary.csv` |
 | `03_wald_tests.py` | `data_final/fama_macbeth/fm_results.parquet` | `data_final/fama_macbeth/fm_wald.csv` |
 | `04_crisis_state_fm.py` | `data_final/panel/weekly_panel.parquet` | `data_final/crisis/fm_crisis_weekly_betas.parquet` + `data_final/crisis/fm_crisis_summary.csv` |
+| `05_characteristics_illiq_mechanism.py` | `data_final/panel/weekly_panel.parquet` | `data_final/fama_macbeth/fm_char_illiq_results.parquet` + `data_final/fama_macbeth/fm_char_illiq_summary.csv` |
 
 ### Stage 07 folders
 
@@ -144,6 +145,7 @@ python Scripts/06_analysis/01_portfolio_sorts.py
 python Scripts/06_analysis/02_fama_macbeth.py
 python Scripts/06_analysis/03_wald_tests.py
 python Scripts/06_analysis/04_crisis_state_fm.py
+python Scripts/06_analysis/05_characteristics_illiq_mechanism.py
 ```
 
 ## 4) Key Data Products
@@ -161,6 +163,8 @@ python Scripts/06_analysis/04_crisis_state_fm.py
 | `data_final/panel/weekly_panel.parquet` | Final merged analysis panel |
 | `data_final/portfolio_sorts/*` | Portfolio sort outputs |
 | `data_final/fama_macbeth/*` | Fama-MacBeth and Wald outputs |
+| `data_final/fama_macbeth/fm_char_illiq_results.parquet` | Weekly mechanism-regression coefficients for characteristics on illiquidity |
+| `data_final/fama_macbeth/fm_char_illiq_summary.csv` | Newey-West summary of mechanism regressions (illiq coefficient focus) |
 
 ## 5) Calendar and Filtering Conventions
 
