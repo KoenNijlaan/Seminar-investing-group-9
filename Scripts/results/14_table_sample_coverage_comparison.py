@@ -23,6 +23,10 @@ BOLLERSLEV_SUMMARY_VARS = [
     "n_obs_total",
 ]
 
+# Set the comparable sample window to align with the original Bollerslev period.
+BOLLERSLEV_START = "1993-01-01"
+BOLLERSLEV_END = "2013-12-31"
+
 
 def summarize_series(name: str, s: pd.Series) -> dict[str, object]:
     s = pd.to_numeric(s, errors="coerce")
@@ -44,6 +48,14 @@ def main() -> None:
 
     panel_path = DATA_FINAL / "panel" / "weekly_panel.parquet"
     panel = pd.read_parquet(panel_path).copy()
+
+    if "week" in panel.columns:
+        panel["week"] = pd.to_datetime(panel["week"], errors="coerce")
+        panel = panel[panel["week"].notna()].copy()
+        panel = panel[
+            (panel["week"] >= pd.Timestamp(BOLLERSLEV_START))
+            & (panel["week"] <= pd.Timestamp(BOLLERSLEV_END))
+        ].copy()
 
     present_vars = [c for c in BOLLERSLEV_SUMMARY_VARS if c in panel.columns]
     if not present_vars:
