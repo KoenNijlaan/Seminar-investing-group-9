@@ -21,6 +21,7 @@ SCRIPTS = [
     "11_figure_cross_section_coverage.py",
     "12_figure_signal_distributions.py",
     "13_figure_cumulative_long_short.py",
+    "15_table_market_frictions.py",
 ]
 
 
