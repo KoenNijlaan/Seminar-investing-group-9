@@ -4,7 +4,6 @@ import pandas as pd
 
 from results_utils import DATA_FINAL, ensure_output_dirs, write_csv_and_tex
 
-
 def main() -> None:
     ensure_output_dirs()
 
