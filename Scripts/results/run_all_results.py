@@ -1,48 +1,55 @@
+"""
+Master script: run all analysis scripts in the correct execution order.
+
+Execution order (as specified):
+  1. Scripts/06_analysis/01_portfolio_sorts.py
+  2. Scripts/06_analysis/02_fama_macbeth.py       ← saves intermediate coefs
+  3. Scripts/06_analysis/03_wald_tests.py          ← needs intermediate from step 2
+  4. Scripts/06_analysis/04_crisis_state.py        ← needs intermediate from step 2
+  5. Scripts/06_analysis/05_illiquidity.py
+  6. Scripts/06_analysis/06_verify_and_regenerate_figures.py
+"""
 from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
 
-
-ROOT = Path(__file__).resolve().parent
+ROOT         = Path(__file__).resolve().parents[2]
+ANALYSIS_DIR = ROOT / "Scripts" / "06_analysis"
 
 SCRIPTS = [
-    "01_table_summary_stats.py",
-    "14_table_sample_coverage_comparison.py",
-    "02_table_portfolio_sorts.py",
-    "03_table_fama_macbeth.py",
-    "04_table_wald.py",
-    "05_table_crisis.py",
-    "06_figure_portfolio_spreads.py",
-    "07_figure_fm_coefficients.py",
-    "08_figure_crisis_differences.py",
-    "09_figure_time_series_coefficients.py",
-    "10_figure_predictor_correlation_heatmap.py",
-    "11_figure_cross_section_coverage.py",
-    "12_figure_signal_distributions.py",
-    "13_figure_cumulative_long_short.py",
-    "15_table_market_frictions.py",
+    ANALYSIS_DIR / "01_portfolio_sorts.py",
+    ANALYSIS_DIR / "02_fama_macbeth.py",
+    ANALYSIS_DIR / "03_wald_tests.py",
+    ANALYSIS_DIR / "04_crisis_state.py",
+    ANALYSIS_DIR / "05_illiquidity.py",
+    ANALYSIS_DIR / "06_verify_and_regenerate_figures.py",
 ]
 
 
 def run_script(script_path: Path) -> None:
     spec = importlib.util.spec_from_file_location(script_path.stem, script_path)
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not load script: {script_path}")
+        raise RuntimeError(f"Could not load: {script_path}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     if not hasattr(mod, "main"):
-        raise AttributeError(f"Script has no main(): {script_path}")
+        raise AttributeError(f"No main() in: {script_path}")
     mod.main()
 
 
 def main() -> None:
-    print("=== Build All Results Tables/Figures ===")
-    for s in SCRIPTS:
-        p = ROOT / s
-        print(f"\nRunning: {s}")
+    print("=== Run All Analysis Scripts ===\n")
+    for p in SCRIPTS:
+        if not p.exists():
+            print(f"\n[SKIP] Not found: {p.name}")
+            continue
+        print(f"\n{'=' * 60}")
+        print(f"Running: {p.name}")
+        print('=' * 60)
         run_script(p)
-    print("\nDone. All result artifacts generated.")
+
+    print("\n=== All done. Outputs in data_final/results/ ===")
 
 
 if __name__ == "__main__":

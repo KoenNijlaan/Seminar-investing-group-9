@@ -1,23 +1,26 @@
 """
-Wald tests (H1-H4) on Fama-MacBeth weekly coefficients.
+Wald tests on decomposed Fama-MacBeth coefficients.
 
-Loads fm_results.parquet (saved by 02_fama_macbeth.py) and tests four
-hypotheses about the decomposed RSJ and RES betas, for both M1 and M2
-decomposition methods.
+Loads the weekly slope series from:
+    data_final/results/intermediate/fm_coefs_B7.parquet  (M1 full decomposition)
+    data_final/results/intermediate/fm_coefs_B8.parquet  (M2 full decomposition)
 
-Hypotheses (from proposal):
-  H1: beta_rsj_sys = beta_rsj_idio        (1 restriction)
-  H2: beta_res_sys = beta_res_idio        (1 restriction)
-  H3: beta_res_sys = 0 AND beta_res_idio = 0  (2 restrictions, joint)
-  H4: all 4 decomposition betas = 0      (4 restrictions, joint)
+Coefficient vector for each decomposition:
+  β = [β_RSJ_sys, β_RSJ_idio, β_RES_sys, β_RES_idio]   (in this order)
 
-Test statistic: W = (Rb - r)' (R V R')^{-1} (Rb - r) ~ chi2(q) under H0
-where V = Var(b_bar) is estimated with a Newey-West covariance matrix.
+Tests:
+  H1: β_RSJ_sys = β_RSJ_idio              R=[1,-1, 0, 0],     r=0,    df=1
+  H2: β_RES_sys = β_RES_idio              R=[0, 0, 1,-1],     r=0,    df=1
+  H3: β_RSJ_idio=0 AND β_RES_idio=0       R=[[0,1,0,0],[0,0,0,1]], r=0, df=2
+  H4: β_RSJ_sys=0  AND β_RES_sys=0        R=[[1,0,0,0],[0,0,1,0]], r=0, df=2
+
+Wald statistic: W = (Rβ̄ - r)' [R Var(β̄) R']^{-1} (Rβ̄ - r) ~ chi²(df) under H0
+
+Var(β̄) = S_NW / T  where S_NW is the NW(6) long-run covariance matrix.
 
 Output:
-  data_final/fama_macbeth/fm_wald.csv
+  data_final/results/tables/tab_wald_tests.tex
 """
-
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -26,213 +29,225 @@ from scipy import stats as scipy_stats
 # ============================================================
 # Settings
 # ============================================================
-ROOT       = Path(__file__).resolve().parents[2]
-FM_FILE    = ROOT / "data_final" / "fama_macbeth" / "fm_results.parquet"
-OUTPUT_DIR = ROOT / "data_final" / "fama_macbeth"
+ROOT      = Path(__file__).resolve().parents[2]
+INTER_DIR = ROOT / "data_final" / "results" / "intermediate"
+TABLE_DIR = ROOT / "data_final" / "results" / "tables"
+TABLE_DIR.mkdir(parents=True, exist_ok=True)
 
-NW_LAGS = 6   # must match 02_fama_macbeth.py
+NW_LAGS = 6
 
-# Predictors for each decomposition spec (must match SPECS in 02_fama_macbeth.py)
-CONTROLS = ["me", "bm", "mom", "rev", "ivol", "illiq"]
-
-SPECS = {
-    "B4_decomp_m2": ["rsj_sys", "rsj_idio", "res_sys_p025", "res_idio_p025"] + CONTROLS,
-    "B5_decomp_m1": ["rsj_sys_weekly", "rsj_idio_weekly",
-                     "res_sys_p025", "res_idio_p025"] + CONTROLS,
+# Ordered coefficient columns for each decomposition spec
+DECOMP_COLS = {
+    "B7": ["rsj_sys_weekly", "rsj_idio_weekly", "res_sys_p025", "res_idio_p025"],
+    "B8": ["rsj_sys",        "rsj_idio",        "res_sys_p025", "res_idio_p025"],
 }
 
-# Which columns are RSJ sys/idio and RES sys/idio for each spec
-DECOMP_KEYS = {
-    "B4_decomp_m2": {
-        "rsj_sys":  "rsj_sys",
-        "rsj_idio": "rsj_idio",
-        "res_sys":  "res_sys_p025",
-        "res_idio": "res_idio_p025",
-    },
-    "B5_decomp_m1": {
-        "rsj_sys":  "rsj_sys_weekly",
-        "rsj_idio": "rsj_idio_weekly",
-        "res_sys":  "res_sys_p025",
-        "res_idio": "res_idio_p025",
-    },
+PRED_LABEL = {
+    "B7": {"rsj_sys_weekly": "RSJ sys (M1)", "rsj_idio_weekly": "RSJ idio (M1)",
+            "res_sys_p025": "RES sys", "res_idio_p025": "RES idio"},
+    "B8": {"rsj_sys": "RSJ sys (M2)", "rsj_idio": "RSJ idio (M2)",
+            "res_sys_p025": "RES sys", "res_idio_p025": "RES idio"},
 }
 
 
 # ============================================================
-# Core functions
+# NW covariance of mean
 # ============================================================
-def nw_cov_matrix(B: np.ndarray, lags: int) -> np.ndarray:
+def nw_cov_mean(B: np.ndarray, lags: int) -> np.ndarray:
     """
-    Newey-West covariance matrix of the sample mean of rows of B.
-
-    Returns Var(b_bar) = S_NW / T, where S_NW is the long-run variance
-    estimated with Bartlett kernel weights w_l = 1 - l/(lags+1).
+    NW long-run covariance matrix of the time-averaged coefficient vector.
+    B : T × k  matrix of weekly coefficient vectors
+    Returns Var(β̄) = S_NW / T
     """
     T, k     = B.shape
     demeaned = B - B.mean(axis=0)
-    S = demeaned.T @ demeaned / T           # Gamma_0
+    S = demeaned.T @ demeaned / T          # Gamma_0
     for l in range(1, lags + 1):
-        w       = 1 - l / (lags + 1)       # Bartlett weight
+        w       = 1.0 - l / (lags + 1)    # Bartlett weight
         gamma_l = demeaned[l:].T @ demeaned[:-l] / T
         S      += w * (gamma_l + gamma_l.T)
-    return S / T                            # covariance of the MEAN
+    return S / T                           # Var(β̄)
 
 
-def wald_test(mean_vec: np.ndarray, cov_mat: np.ndarray,
-              R: np.ndarray, r: np.ndarray) -> dict:
-    """
-    Wald test: H0: R @ mean_vec = r
-    W = (Rb - r)' (R V R')^{-1} (Rb - r) ~ chi2(q)
-    """
+# ============================================================
+# Wald test
+# ============================================================
+def wald_test(mean_vec, cov_mat, R, r):
     diff = R @ mean_vec - r
-    var  = R @ cov_mat @ R.T
+    V    = R @ cov_mat @ R.T
     try:
-        W = float(diff @ np.linalg.solve(var, diff))
+        W = float(diff @ np.linalg.solve(V, diff))
     except np.linalg.LinAlgError:
-        return {"W": np.nan, "df": len(r), "p_value": np.nan}
+        return dict(W=np.nan, df=len(r), p=np.nan)
     df = len(r)
     p  = float(1 - scipy_stats.chi2.cdf(W, df))
-    return {"W": W, "df": df, "p_value": p}
+    return dict(W=W, df=df, p=p)
 
 
-def build_restriction_matrices(idx: dict, n_preds: int, keys: dict):
+# ============================================================
+# Build restriction matrices (fixed order: sys_RSJ, idio_RSJ, sys_RES, idio_RES)
+# ============================================================
+def make_restrictions():
     """
-    Build (label, R, r) triples for H1-H4.
-
-    idx   : {predictor_name: column_index}
-    keys  : {"rsj_sys": col_name, "rsj_idio": col_name, ...}
+    Returns list of (label, R, r, df_label) tuples.
+    β index: 0=RSJ_sys, 1=RSJ_idio, 2=RES_sys, 3=RES_idio
     """
-    rsj_sys  = keys["rsj_sys"]
-    rsj_idio = keys["rsj_idio"]
-    res_sys  = keys["res_sys"]
-    res_idio = keys["res_idio"]
+    k = 4
 
-    # H1: beta_rsj_sys = beta_rsj_idio
-    R1 = np.zeros((1, n_preds))
-    R1[0, idx[rsj_sys]]  =  1
-    R1[0, idx[rsj_idio]] = -1
+    # H1: β_RSJ_sys = β_RSJ_idio  ↔  β[0] - β[1] = 0
+    R1 = np.array([[1, -1, 0, 0]], dtype=float)
     r1 = np.zeros(1)
 
-    # H2: beta_res_sys = beta_res_idio
-    R2 = np.zeros((1, n_preds))
-    R2[0, idx[res_sys]]  =  1
-    R2[0, idx[res_idio]] = -1
+    # H2: β_RES_sys = β_RES_idio  ↔  β[2] - β[3] = 0
+    R2 = np.array([[0, 0, 1, -1]], dtype=float)
     r2 = np.zeros(1)
 
-    # H3: beta_res_sys = 0 AND beta_res_idio = 0 (joint)
-    R3 = np.zeros((2, n_preds))
-    R3[0, idx[res_sys]]  = 1
-    R3[1, idx[res_idio]] = 1
+    # H3: β_RSJ_idio = 0 AND β_RES_idio = 0
+    R3 = np.array([[0, 1, 0, 0],
+                   [0, 0, 0, 1]], dtype=float)
     r3 = np.zeros(2)
 
-    # H4: all 4 decomposition betas = 0 (joint)
-    R4 = np.zeros((4, n_preds))
-    R4[0, idx[rsj_sys]]  = 1
-    R4[1, idx[rsj_idio]] = 1
-    R4[2, idx[res_sys]]  = 1
-    R4[3, idx[res_idio]] = 1
-    r4 = np.zeros(4)
+    # H4: β_RSJ_sys = 0 AND β_RES_sys = 0
+    R4 = np.array([[1, 0, 0, 0],
+                   [0, 0, 1, 0]], dtype=float)
+    r4 = np.zeros(2)
 
     return [
-        ("H1: beta_rsj_sys = beta_rsj_idio",           R1, r1),
-        ("H2: beta_res_sys = beta_res_idio",           R2, r2),
-        ("H3: beta_res_sys = 0 AND beta_res_idio = 0", R3, r3),
-        ("H4: all 4 decomp betas = 0",                 R4, r4),
+        (r"$H_1$: $\beta^\mathrm{RSJ}_\mathrm{sys} = \beta^\mathrm{RSJ}_\mathrm{idio}$",  R1, r1),
+        (r"$H_2$: $\beta^\mathrm{RES}_\mathrm{sys} = \beta^\mathrm{RES}_\mathrm{idio}$",  R2, r2),
+        (r"$H_3$: $\beta^\mathrm{RSJ}_\mathrm{idio} = \beta^\mathrm{RES}_\mathrm{idio} = 0$", R3, r3),
+        (r"$H_4$: $\beta^\mathrm{RSJ}_\mathrm{sys} = \beta^\mathrm{RES}_\mathrm{sys} = 0$",   R4, r4),
     ]
 
 
-def run_wald_tests_for_spec(spec_key: str, df_fm: pd.DataFrame) -> list[dict]:
-    """
-    Run H1-H4 for one decomposition spec. Returns a list of result dicts.
-    """
-    preds  = SPECS[spec_key]
-    keys   = DECOMP_KEYS[spec_key]
-    n_preds = len(preds)
+# ============================================================
+# Run Wald tests for one decomposition spec
+# ============================================================
+def run_wald(spec_key):
+    fpath = INTER_DIR / f"fm_coefs_{spec_key}.parquet"
+    if not fpath.exists():
+        raise FileNotFoundError(
+            f"{fpath}\nRun 02_fama_macbeth.py first."
+        )
 
-    sub = df_fm[df_fm["spec"] == spec_key].copy()
-    if sub.empty:
-        print(f"  No data for spec {spec_key} — skipping.")
-        return []
+    df = pd.read_parquet(fpath)
+    df["week"] = pd.to_datetime(df["week"])
+    cols = DECOMP_COLS[spec_key]
 
-    # Build T × n_preds matrix: one row per week, one column per predictor
-    weeks = sorted(sub["week"].unique())
-    B_rows = []
-    for week in weeks:
-        row_data = sub[sub["week"] == week]
-        # Each predictor's coefficient is stored in a column named after it
-        coefs = []
-        ok = True
-        for p in preds:
-            if p not in row_data.columns or row_data[p].isna().all():
-                ok = False
-                break
-            coefs.append(float(row_data[p].iloc[0]))
-        if ok:
-            B_rows.append(coefs)
+    # Check all needed columns exist
+    missing = [c for c in cols if c not in df.columns]
+    if missing:
+        raise KeyError(f"Spec {spec_key}: missing columns {missing} in {fpath.name}")
 
-    if len(B_rows) < 10:
-        print(f"  Too few weeks ({len(B_rows)}) for spec {spec_key} — skipping.")
-        return []
+    # Build T × 4 matrix (drop weeks where any component is NaN)
+    B = df[cols].dropna().to_numpy(dtype=float)
+    T = len(B)
+    print(f"  {spec_key}: {T} valid weeks")
 
-    B      = np.array(B_rows, dtype=float)   # T × n_preds
     mean_b = B.mean(axis=0)
-    V_mean = nw_cov_matrix(B, NW_LAGS)
-    idx    = {p: i for i, p in enumerate(preds)}
+    V      = nw_cov_mean(B, NW_LAGS)
 
-    hypotheses = build_restriction_matrices(idx, n_preds, keys)
-
+    restrictions = make_restrictions()
     rows = []
-    for h_label, R, r in hypotheses:
-        result = wald_test(mean_b, V_mean, R, r)
+    for label, R, r in restrictions:
+        res = wald_test(mean_b, V, R, r)
         rows.append({
-            "spec"      : spec_key,
-            "hypothesis": h_label,
-            "W"         : result["W"],
-            "df"        : result["df"],
-            "p_value"   : result["p_value"],
-            "n_weeks"   : len(B_rows),
+            "hypothesis": label,
+            "df": res["df"],
+            "W_M1" if spec_key == "B7" else "W_M2": res["W"],
+            "p_M1" if spec_key == "B7" else "p_M2": res["p"],
         })
-        sig = ("***" if result["p_value"] < 0.01 else
-               "**"  if result["p_value"] < 0.05 else
-               "*"   if result["p_value"] < 0.10 else "")
-        print(f"  {h_label:<47}  W={result['W']:7.2f}  "
-              f"df={result['df']}  p={result['p_value']:.4f} {sig}")
-    return rows
+        sig = "***" if res["p"] < 0.01 else "**" if res["p"] < 0.05 else "*" if res["p"] < 0.10 else ""
+        print(f"    {label[:60]:<60}  W={res['W']:7.2f}  df={res['df']}  "
+              f"p={res['p']:.4f}{sig}")
+
+    return pd.DataFrame(rows), mean_b, V
+
+
+# ============================================================
+# LaTeX table
+# ============================================================
+def build_latex(df_m1, df_m2):
+    def _p_stars(p):
+        if np.isnan(p): return ""
+        if p < 0.01: return "***"
+        if p < 0.05: return "**"
+        if p < 0.10: return "*"
+        return ""
+
+    def _fmt_w(val, p):
+        if np.isnan(val): return ""
+        return f"{val:.2f}{_p_stars(p)}"
+
+    def _fmt_p(val):
+        if np.isnan(val): return ""
+        return f"{val:.4f}"
+
+    # Merge on hypothesis
+    m1 = df_m1.rename(columns={"W_M1": "W_M1", "p_M1": "p_M1"})
+    m2 = df_m2.rename(columns={"W_M2": "W_M2", "p_M2": "p_M2"})
+    merged = m1.merge(m2[["hypothesis","W_M2","p_M2"]], on="hypothesis", how="outer")
+
+    lines = []
+    lines += [r"\begin{table}[htbp]", r"\centering", r"\begin{threeparttable}"]
+    lines += [r"\caption{Wald Tests on Decomposed Fama--MacBeth Coefficients}"]
+    lines += [r"\label{tab:wald_tests}"]
+    lines += [r"\begin{tabular}{lcrcrr}"]
+    lines += [r"\toprule"]
+    lines += [r"Hypothesis & df & $\chi^2$ (M1) & $p$-value & $\chi^2$ (M2) & $p$-value \\"]
+    lines += [r"\midrule"]
+
+    for _, row in merged.iterrows():
+        hyp = row["hypothesis"]
+        df  = int(row["df"]) if np.isfinite(row["df"]) else ""
+        w1  = _fmt_w(row.get("W_M1", np.nan), row.get("p_M1", np.nan))
+        p1  = _fmt_p(row.get("p_M1", np.nan))
+        w2  = _fmt_w(row.get("W_M2", np.nan), row.get("p_M2", np.nan))
+        p2  = _fmt_p(row.get("p_M2", np.nan))
+        lines.append(f"{hyp} & {df} & {w1} & {p1} & {w2} & {p2} \\\\")
+
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    lines += [r"\begin{tablenotes}", r"\small",
+              r"\item Notes: Coefficient vector $\boldsymbol{\beta} ="
+              r" [\beta^\mathrm{RSJ}_\mathrm{sys},\, \beta^\mathrm{RSJ}_\mathrm{idio},"
+              r"\, \beta^\mathrm{RES}_\mathrm{sys},\, \beta^\mathrm{RES}_\mathrm{idio}]$."
+              r" M1 = intraday decomposition; M2 = rolling 52-week regression."
+              r" Wald statistic $W = (\mathbf{R}\bar{\boldsymbol{\beta}} - \mathbf{r})'$"
+              r" $[\mathbf{R}\widehat{\mathrm{Var}}(\bar{\boldsymbol{\beta}})\mathbf{R}']^{-1}$"
+              r" $(\mathbf{R}\bar{\boldsymbol{\beta}} - \mathbf{r}) \sim \chi^2(df)$ under $H_0$."
+              r" $\widehat{\mathrm{Var}}(\bar{\boldsymbol{\beta}})$ uses NW(6) Bartlett kernel."
+              r" $^{*}p<0.10$, $^{**}p<0.05$, $^{***}p<0.01$.",
+              r"\end{tablenotes}",
+              r"\end{threeparttable}", r"\end{table}"]
+    return "\n".join(lines)
 
 
 # ============================================================
 # Main
 # ============================================================
 def main():
-    print("=== Wald Tests on Fama-MacBeth Coefficients ===\n")
+    print("=== Wald Tests on FM Coefficients ===\n")
 
-    if not FM_FILE.exists():
-        raise FileNotFoundError(
-            f"FM results not found: {FM_FILE}\n"
-            "Run 02_fama_macbeth.py first."
-        )
+    print("--- M1 decomposition (B7) ---")
+    df_m1, mean_m1, _ = run_wald("B7")
 
-    df_fm = pd.read_parquet(FM_FILE)
-    df_fm["week"] = pd.to_datetime(df_fm["week"])
-    print(f"Loaded: {len(df_fm):,} rows, {df_fm['spec'].nunique()} specs\n")
+    print("\n--- M2 decomposition (B8) ---")
+    df_m2, mean_m2, _ = run_wald("B8")
 
-    all_rows = []
+    # Build combined table
+    tex = build_latex(df_m1, df_m2)
+    out = TABLE_DIR / "tab_wald_tests.tex"
+    out.write_text(tex, encoding="utf-8")
+    print(f"\nSaved: {out.name}")
 
-    for spec_key in SPECS:
-        print("=" * 70)
-        print(f"Spec: {spec_key}")
-        print("=" * 70)
-        rows = run_wald_tests_for_spec(spec_key, df_fm)
-        all_rows.extend(rows)
-        print()
+    # Console summary
+    print("\n--- M1 mean betas (bps) ---")
+    for lbl, val in zip(DECOMP_COLS["B7"], mean_m1 * 10_000):
+        print(f"  {lbl:<30} {val:>8.2f}")
 
-    if all_rows:
-        df_wald = pd.DataFrame(all_rows)
-        out_path = OUTPUT_DIR / "fm_wald.csv"
-        df_wald.to_csv(out_path, index=False, float_format="%.6f")
-        print(f"Saved: {out_path}")
-    else:
-        print("No Wald test results to save.")
+    print("\n--- M2 mean betas (bps) ---")
+    for lbl, val in zip(DECOMP_COLS["B8"], mean_m2 * 10_000):
+        print(f"  {lbl:<30} {val:>8.2f}")
 
     print("\n=== Done ===")
 
