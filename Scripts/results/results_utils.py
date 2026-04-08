@@ -21,11 +21,11 @@ def stars_from_t(t: float) -> str:
     if pd.isna(t):
         return ""
     at = abs(float(t))
-    if at > 3.29:
+    if at > 2.576:
         return "***"
-    if at > 2.58:
-        return "**"
     if at > 1.96:
+        return "**"
+    if at > 1.645:
         return "*"
     return ""
 

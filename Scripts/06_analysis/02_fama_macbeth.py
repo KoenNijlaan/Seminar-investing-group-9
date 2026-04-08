@@ -100,9 +100,9 @@ def _stars(t):
     if t is None or (isinstance(t, float) and np.isnan(t)):
         return ""
     t = abs(float(t))
-    if t > 3.29: return "***"
-    if t > 2.58: return "**"
-    if t > 1.96: return "*"
+    if t > 2.576: return "***"
+    if t > 1.96: return "**"
+    if t > 1.645: return "*"
     return ""
 
 
@@ -113,6 +113,13 @@ def _fmt(val, t=None, dec=2):
     if t is not None:
         s += _stars(t)
     return s
+
+
+def _fmt_pct(val):
+    """Format a proportion as a percentage string, e.g. 0.0537 → '5.37\\%'."""
+    if val is None or (isinstance(val, float) and np.isnan(val)):
+        return ""
+    return f"{float(val) * 100:.2f}\\%"
 
 
 def winsorize_cs(s: pd.Series) -> pd.Series:
@@ -268,7 +275,7 @@ def build_tab_aggregate(summary, avg_rsq, all_weekly):
     lines += [r"$N_{\text{weeks}}$" + " & " +
               " & ".join(n_wk(s) for s in specs) + r" \\"]
     lines += [r"Avg.\ Adj.\ $R^2$" + " & " +
-              " & ".join(_fmt(avg_rsq.get(s, np.nan), dec=4) for s in specs) + r" \\"]
+              " & ".join(_fmt_pct(avg_rsq.get(s, np.nan)) for s in specs) + r" \\"]
     lines += [r"\bottomrule", r"\end{tabular}"]
     lines += [r"\begin{tablenotes}", r"\small",
               r"\item Notes: Dependent variable is $R_{i,w+1}$ (next-week return)."
@@ -327,7 +334,7 @@ def build_tab_decomposition(summary, avg_rsq, all_weekly):
     lines += [r"$N_{\text{weeks}}$" + " & " +
               " & ".join(n_wk(s) for s in specs) + r" \\"]
     lines += [r"Avg.\ Adj.\ $R^2$" + " & " +
-              " & ".join(_fmt(avg_rsq.get(s, np.nan), dec=4) for s in specs) + r" \\"]
+              " & ".join(_fmt_pct(avg_rsq.get(s, np.nan)) for s in specs) + r" \\"]
     lines += [r"\bottomrule", r"\end{tabular}"]
     lines += [r"\begin{tablenotes}", r"\small",
               r"\item Notes: M1 = intraday decomposition; M2 = rolling 52-week"
@@ -383,7 +390,7 @@ def build_tab_supplementary(summary, avg_rsq, all_weekly):
     lines += [r"$N_{\text{weeks}}$" + " & " +
               " & ".join(n_wk(s) for s in specs) + r" \\"]
     lines += [r"Avg.\ Adj.\ $R^2$" + " & " +
-              " & ".join(_fmt(avg_rsq.get(s, np.nan), dec=4) for s in specs) + r" \\"]
+              " & ".join(_fmt_pct(avg_rsq.get(s, np.nan)) for s in specs) + r" \\"]
     lines += [r"\bottomrule", r"\end{tabular}"]
     lines += [r"\begin{tablenotes}", r"\small",
               r"\item Notes: (S1) demonstrates that idiosyncratic RSJ and idiosyncratic"

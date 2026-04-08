@@ -4,7 +4,25 @@
       "Bash(python -c \"import pandas as pd; df = pd.read_parquet\\(''data_raw/wrds/ff_daily_factors_1992_2024.parquet''\\); print\\(df.columns.tolist\\(\\)\\); print\\(df.head\\(2\\)\\)\")",
       "Bash(python -c \"import pandas as pd; df = pd.read_parquet\\(''data_raw/wrds/crsp_daily_rsj_sample_1992_2024.parquet''\\); print\\(df.columns.tolist\\(\\)\\); print\\(df.dtypes\\); print\\(df.head\\(2\\)\\)\")",
       "Bash(python -c \":*)",
-      "Bash(python Scripts/05_dataset_construction/01_build_data_panel.py)"
+      "Bash(python Scripts/05_dataset_construction/01_build_data_panel.py)",
+      "Bash(git pull:*)",
+      "Bash(python:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(find /Users/jules/Downloads -name *Syllabus* -o -name *syllabus*)",
+      "Bash(find /Users/jules/Seminar-investing-group-9 -name *.tex)",
+      "Bash(brew install:*)",
+      "Bash(pdftotext '/Users/jules/Downloads/GeneralSyllabus_SeminarsEconometrics25 \\(2\\).pdf' -)",
+      "Bash(python3 Scripts/results/01_table_summary_stats.py)",
+      "Bash(python3 Scripts/results/02_table_portfolio_sorts.py)",
+      "Bash(python3 Scripts/results/03_table_fama_macbeth.py)",
+      "Bash(python3 Scripts/results/04_table_wald_tests.py)",
+      "Bash(python3 Scripts/results/05_table_crisis.py)",
+      "Bash(python3 Scripts/results/04_table_wald.py)",
+      "Bash(python3 Scripts/results/15_table_market_frictions.py)",
+      "Bash(python3:*)",
+      "Bash(pdflatex -interaction=nonstopmode main.tex)",
+      "Bash(git reset:*)",
+      "Read(//tmp/**)"
     ]
   }
 }

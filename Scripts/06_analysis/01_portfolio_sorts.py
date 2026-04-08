@@ -75,9 +75,9 @@ def _stars(t):
     if t is None or (isinstance(t, float) and np.isnan(t)):
         return ""
     t = abs(float(t))
-    if t > 3.29: return "***"
-    if t > 2.58: return "**"
-    if t > 1.96: return "*"
+    if t > 2.576: return "***"
+    if t > 1.96: return "**"
+    if t > 1.645: return "*"
     return ""
 
 

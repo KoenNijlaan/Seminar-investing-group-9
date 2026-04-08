@@ -66,11 +66,11 @@ def _stars(t):
     if not np.isfinite(t):
         return ""
     t = abs(float(t))
-    if t > 3.29:
+    if t > 2.576:
         return "***"
-    if t > 2.58:
-        return "**"
     if t > 1.96:
+        return "**"
+    if t > 1.645:
         return "*"
     return ""
 
