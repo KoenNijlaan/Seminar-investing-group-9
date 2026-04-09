@@ -146,7 +146,7 @@ def make_heatmap_figure(panel):
         "rsj_weekly","rsj_sys_weekly","rsj_idio_weekly",
         "rsj_sys","rsj_idio",
         "res_weekly","res_sys_p025","res_idio_p025",
-        "me","bm","mom","rev","ivol","illiq",
+        "me","bm","mom","rev","ivol","illiq","rvol","rsk","rkt",
     ]
     available = [c for c in cols if c in panel.columns]
     if not available:
@@ -160,6 +160,7 @@ def make_heatmap_figure(panel):
         "res_sys_p025":    "RES$_{sys}$", "res_idio_p025": "RES$_{idio}$",
         "me": "log(ME)", "bm": "BM", "mom": "MOM",
         "rev": "REV", "ivol": "IVOL", "illiq": "ILLIQ",
+        "rvol": "RVOL", "rsk": "RSK", "rkt": "RKT",
     }
 
     sub = panel[available].dropna(how="all")

@@ -72,7 +72,7 @@ MIN_STOCKS = 50
 WINSOR_LOW  = 0.01
 WINSOR_HIGH = 0.99
 
-CONTROLS = ["me", "bm", "mom", "rev", "ivol", "illiq"]
+CONTROLS = ["me", "bm", "mom", "rev", "ivol", "illiq", "rvol", "rsk", "rkt"]
 
 SYS_PREDS = ["rsj_sys_weekly", "res_sys_p025"]
 SYS_LABEL = {

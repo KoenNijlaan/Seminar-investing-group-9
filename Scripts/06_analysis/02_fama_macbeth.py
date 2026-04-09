@@ -50,7 +50,7 @@ MIN_STOCKS = 50
 WINSOR_LOW  = 0.01
 WINSOR_HIGH = 0.99
 
-CONTROLS = ["me", "bm", "mom", "rev", "ivol", "illiq"]
+CONTROLS = ["me", "bm", "mom", "rev", "ivol", "illiq", "rvol", "rsk", "rkt"]
 
 CTRL_LABEL = {
     "me":    r"$\log(\mathrm{ME})$",
@@ -59,6 +59,9 @@ CTRL_LABEL = {
     "rev":   "REV",
     "ivol":  "IVOL",
     "illiq": "ILLIQ",
+    "rvol":  "RVOL",
+    "rsk":   "RSK",
+    "rkt":   "RKT",
 }
 
 # ============================================================
@@ -90,6 +93,9 @@ PRED_LABEL = {
     "res_sys_p025":    r"RES$_{\mathrm{sys}}$",
     "res_idio_p025":   r"RES$_{\mathrm{idio}}$",
     **CTRL_LABEL,
+    "rvol": "RVOL",
+    "rsk":  "RSK",
+    "rkt":  "RKT",
 }
 
 

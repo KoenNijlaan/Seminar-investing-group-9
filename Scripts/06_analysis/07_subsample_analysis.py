@@ -33,7 +33,7 @@ NW_LAGS    = 6
 MIN_STOCKS = 50
 WINSOR_LOW  = 0.01
 WINSOR_HIGH = 0.99
-CONTROLS    = ["me", "bm", "mom", "rev", "ivol", "illiq"]
+CONTROLS    = ["me", "bm", "mom", "rev", "ivol", "illiq", "rvol", "rsk", "rkt"]
 
 SORT_VARIABLES = {
     "rsj_weekly"     : "RSJ",
@@ -61,11 +61,16 @@ PANEL_A = ["rsj_weekly", "rsj_sys_weekly", "rsj_idio_weekly", "rsj_sys", "rsj_id
 PANEL_B = ["res_weekly", "res_sys_p025", "res_idio_p025"]
 
 SPECS = {
-    "B1": ["rsj_weekly"] + CONTROLS,
-    "B2": ["res_weekly"] + CONTROLS,
-    "B3": ["rsj_weekly", "res_weekly"] + CONTROLS,
-    "B7": ["rsj_sys_weekly", "rsj_idio_weekly", "res_sys_p025", "res_idio_p025"] + CONTROLS,
-    "B8": ["rsj_sys", "rsj_idio", "res_sys_p025", "res_idio_p025"] + CONTROLS,
+    "B1":  ["rsj_weekly"] + CONTROLS,
+    "B2":  ["res_weekly"] + CONTROLS,
+    "B3":  ["rsj_weekly", "res_weekly"] + CONTROLS,
+    "B4":  ["rsj_sys_weekly", "rsj_idio_weekly"] + CONTROLS,
+    "B5":  ["rsj_sys", "rsj_idio"] + CONTROLS,
+    "B6":  ["res_sys_p025", "res_idio_p025"] + CONTROLS,
+    "B7":  ["rsj_sys_weekly", "rsj_idio_weekly", "res_sys_p025", "res_idio_p025"] + CONTROLS,
+    "B8":  ["rsj_sys", "rsj_idio", "res_sys_p025", "res_idio_p025"] + CONTROLS,
+    "B9":  ["rsj_idio_weekly", "res_idio_p025"] + CONTROLS,
+    "B10": ["rsj_sys_weekly", "res_idio_p025"] + CONTROLS,
 }
 
 PRED_LABEL = {
@@ -83,6 +88,9 @@ PRED_LABEL = {
     "rev":   "REV",
     "ivol":  "IVOL",
     "illiq": "ILLIQ",
+    "rvol":  "RVOL",
+    "rsk":   "RSK",
+    "rkt":   "RKT",
 }
 
 CTRL_LABEL = {k: PRED_LABEL[k] for k in CONTROLS}
@@ -572,10 +580,10 @@ def main():
     p.write_text(tex_agg, encoding="utf-8")
     print(f"\nSaved: {p.name}")
 
-    # Decomposition table: B7, B8
+    # Decomposition table: B4–B8
     tex_decomp = _fm_tex_block(
         pre_summ, post_summ, pre_rsq, post_rsq, pre_nw, post_nw,
-        specs      = ["B7", "B8"],
+        specs      = ["B4", "B5", "B6", "B7", "B8"],
         focal_vars = ["rsj_sys_weekly", "rsj_idio_weekly",
                       "rsj_sys", "rsj_idio",
                       "res_sys_p025", "res_idio_p025"],
@@ -584,6 +592,18 @@ def main():
     )
     p = TABLE_DIR / "tab_subsample_fm_decomposition.tex"
     p.write_text(tex_decomp, encoding="utf-8")
+    print(f"\nSaved: {p.name}")
+
+    # Supplementary table: B9, B10
+    tex_supp = _fm_tex_block(
+        pre_summ, post_summ, pre_rsq, post_rsq, pre_nw, post_nw,
+        specs      = ["B9", "B10"],
+        focal_vars = ["rsj_idio_weekly", "rsj_sys_weekly", "res_idio_p025"],
+        title      = r"Fama--MacBeth Regressions: Supplementary Specifications --- Pre-2008 vs.\ Post-2008",
+        label      = "tab:subsample_fm_supplementary",
+    )
+    p = TABLE_DIR / "tab_subsample_fm_supplementary.tex"
+    p.write_text(tex_supp, encoding="utf-8")
     print(f"\nSaved: {p.name}")
 
     print("\n=== Done ===")

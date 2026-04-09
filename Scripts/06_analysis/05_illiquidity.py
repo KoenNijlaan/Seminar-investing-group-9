@@ -21,7 +21,7 @@ WINSOR_LOW = 0.01
 WINSOR_HIGH = 0.99
 MIN_STOCKS = 30
 
-CONTROLS_A = ["me", "bm", "mom", "rev", "ivol"]
+CONTROLS_A = ["me", "bm", "mom", "rev", "ivol", "rvol", "rsk", "rkt"]
 IDIO_SIGNALS = [
     ("rsj_idio_weekly", "RSJ idio (M1)"),
     ("res_idio_p025", "RES idio"),
