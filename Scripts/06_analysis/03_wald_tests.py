@@ -89,11 +89,9 @@ def wald_test(mean_vec, cov_mat, R, r):
 # ============================================================
 def make_restrictions():
     """
-    Returns list of (label, R, r, df_label) tuples.
+    Signed restrictions (H1–H4).
     β index: 0=RSJ_sys, 1=RSJ_idio, 2=RES_sys, 3=RES_idio
     """
-    k = 4
-
     # H1: β_RSJ_sys = β_RSJ_idio  ↔  β[0] - β[1] = 0
     R1 = np.array([[1, -1, 0, 0]], dtype=float)
     r1 = np.zeros(1)
@@ -117,6 +115,40 @@ def make_restrictions():
         (r"$H_2$: $\beta^\mathrm{RES}_\mathrm{sys} = \beta^\mathrm{RES}_\mathrm{idio}$",  R2, r2),
         (r"$H_3$: $\beta^\mathrm{RSJ}_\mathrm{idio} = \beta^\mathrm{RES}_\mathrm{idio} = 0$", R3, r3),
         (r"$H_4$: $\beta^\mathrm{RSJ}_\mathrm{sys} = \beta^\mathrm{RES}_\mathrm{sys} = 0$",   R4, r4),
+    ]
+
+
+def make_abs_restrictions(mean_b: np.ndarray):
+    """
+    Absolute-value restrictions (H1_abs, H2_abs) via the delta method.
+
+    For |β_a| = |β_b|, linearise around the estimated mean:
+        |β_a| - |β_b| ≈ sign(β̄_a)·β_a - sign(β̄_b)·β_b
+
+    so R_abs = [sign(β̄_a), -sign(β̄_b), ...]
+
+    H3 and H4 test β = 0, which is the same as |β| = 0, so they are
+    unchanged and not duplicated here.
+
+    β index: 0=RSJ_sys, 1=RSJ_idio, 2=RES_sys, 3=RES_idio
+    """
+    s = np.sign(mean_b)   # signs of estimated means; shape (4,)
+    # If a mean is exactly zero, sign=0; treat as +1 to avoid a zero row
+    s = np.where(s == 0, 1.0, s)
+
+    # H1_abs: |β_RSJ_sys| = |β_RSJ_idio|  ↔  s[0]*β[0] - s[1]*β[1] = 0
+    R1a = np.array([[s[0], -s[1], 0, 0]], dtype=float)
+    r1a = np.zeros(1)
+
+    # H2_abs: |β_RES_sys| = |β_RES_idio|  ↔  s[2]*β[2] - s[3]*β[3] = 0
+    R2a = np.array([[0, 0, s[2], -s[3]]], dtype=float)
+    r2a = np.zeros(1)
+
+    return [
+        (r"$H_{1,\mathrm{abs}}$: $|\beta^\mathrm{RSJ}_\mathrm{sys}| = |\beta^\mathrm{RSJ}_\mathrm{idio}|$",
+         R1a, r1a),
+        (r"$H_{2,\mathrm{abs}}$: $|\beta^\mathrm{RES}_\mathrm{sys}| = |\beta^\mathrm{RES}_\mathrm{idio}|$",
+         R2a, r2a),
     ]
 
 
@@ -147,9 +179,9 @@ def run_wald(spec_key):
     mean_b = B.mean(axis=0)
     V      = nw_cov_mean(B, NW_LAGS)
 
-    restrictions = make_restrictions()
+    all_restrictions = make_restrictions() + make_abs_restrictions(mean_b)
     rows = []
-    for label, R, r in restrictions:
+    for label, R, r in all_restrictions:
         res = wald_test(mean_b, V, R, r)
         rows.append({
             "hypothesis": label,
@@ -197,8 +229,15 @@ def build_latex(df_m1, df_m2):
     lines += [r"Hypothesis & df & $\chi^2$ (M1) & $p$-value & $\chi^2$ (M2) & $p$-value \\"]
     lines += [r"\midrule"]
 
+    # Signed tests (H1–H4) then absolute-value tests (H1_abs, H2_abs)
+    ABS_MARKER = r"$H_{1,\mathrm{abs}}$"
+    first_abs_seen = False
     for _, row in merged.iterrows():
         hyp = row["hypothesis"]
+        if not first_abs_seen and ABS_MARKER in hyp:
+            lines += [r"\midrule",
+                      r"\multicolumn{6}{l}{\textit{Absolute-value tests (delta method)}} \\"]
+            first_abs_seen = True
         df  = int(row["df"]) if np.isfinite(row["df"]) else ""
         w1  = _fmt_w(row.get("W_M1", np.nan), row.get("p_M1", np.nan))
         p1  = _fmt_p(row.get("p_M1", np.nan))
@@ -216,6 +255,9 @@ def build_latex(df_m1, df_m2):
               r" $[\mathbf{R}\widehat{\mathrm{Var}}(\bar{\boldsymbol{\beta}})\mathbf{R}']^{-1}$"
               r" $(\mathbf{R}\bar{\boldsymbol{\beta}} - \mathbf{r}) \sim \chi^2(df)$ under $H_0$."
               r" $\widehat{\mathrm{Var}}(\bar{\boldsymbol{\beta}})$ uses NW(6) Bartlett kernel."
+              r" Absolute-value tests ($H_{1,\mathrm{abs}}$, $H_{2,\mathrm{abs}}$) apply the"
+              r" delta-method linearisation $|\beta| \approx \mathrm{sign}(\bar{\beta})\cdot\beta$"
+              r" and test $|\beta_\mathrm{sys}| = |\beta_\mathrm{idio}|$ regardless of sign."
               r" $^{*}p<0.10$, $^{**}p<0.05$, $^{***}p<0.01$.",
               r"\end{tablenotes}",
               r"\end{threeparttable}", r"\end{table}"]
