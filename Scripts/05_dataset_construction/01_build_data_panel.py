@@ -27,6 +27,7 @@ RES_WEEKLY          = ROOT / "data_intermediate" / "res_weekly" / "res_weekly.pa
 RES_SPLIT_WEEKLY    = ROOT / "data_intermediate" / "weekly_data_res_split" / "weekly_res_sys_idio.parquet"
 WEEKLY_RETURNS      = ROOT / "data_intermediate" / "weekly_stock_returns" / "weekly_stock_returns.parquet"
 WEEKLY_CONTROLS     = ROOT / "data_intermediate" / "controls" / "weekly_controls.parquet"
+RVOL_RSK_RKT_WEEKLY = ROOT / "data_intermediate" / "rvol_rsk_rkt_weekly" / "rvol_rsk_rkt_weekly.parquet"
 
 # Output
 OUTPUT_DIR  = ROOT / "data_final" / "panel"
@@ -175,6 +176,18 @@ def main():
         base = base.merge(res_split, on=["permno", "week"], how="left")
     print()
 
+    # ----------------------------------------------------------
+    # 8) RVOL, RSK, RKT weekly (Bollerslev et al. 2020)
+    # ----------------------------------------------------------
+    print("Loading RVOL/RSK/RKT weekly...")
+    rvol_rsk_rkt = read(RVOL_RSK_RKT_WEEKLY, "rvol_rsk_rkt_weekly")
+    if rvol_rsk_rkt is not None:
+        rvol_rsk_rkt = to_int64_permno(rvol_rsk_rkt)
+        rvol_rsk_rkt = normalize_week(rvol_rsk_rkt, "week")
+        rvol_rsk_rkt = rvol_rsk_rkt[["permno", "week", "rvol", "rsk", "rkt"]].copy()
+        base = base.merge(rvol_rsk_rkt, on=["permno", "week"], how="left")
+    print()
+
     # prc, shrcd, exchcd come from controls (added in 02_build_weekly_controls.py)
     for c in ["prc", "shrcd", "exchcd"]:
         if c in base.columns:
@@ -209,7 +222,46 @@ def main():
     base = base.drop(columns=["prc", "shrcd"], errors="ignore")
 
     # ----------------------------------------------------------
-    # 10) Save
+    # 10) Stock-week filter: keep only stock-weeks where ALL
+    #     main (non-control) variables are available.
+    #
+    #     Main variables required (all must be non-null):
+    #       rsj_weekly, res_weekly, rvol, rsk, rkt,
+    #       rsj_sys_weekly, rsj_idio_weekly,
+    #       rsj_sys, rsj_idio,
+    #       res_sys_p025, res_idio_p025
+    #
+    #     Control variables (me, bm, mom, rev, ivol, illiq,
+    #     R_i_w, R_i_w_plus_1) are allowed to be missing.
+    # ----------------------------------------------------------
+    print("\nApplying stock-week filter (all main variables must be non-null per row)...")
+    n_before = len(base)
+
+    MAIN_VARS = [
+        "rsj_weekly",
+        "res_weekly",
+        "rvol", "rsk", "rkt",
+        "rsj_sys_weekly", "rsj_idio_weekly",
+        "rsj_sys", "rsj_idio",
+        "res_sys_p025", "res_idio_p025",
+    ]
+
+    present_main_vars = [c for c in MAIN_VARS if c in base.columns]
+    missing_main_vars = [c for c in MAIN_VARS if c not in base.columns]
+    if missing_main_vars:
+        print(f"  WARNING: main variable columns not in panel (skipped): {missing_main_vars}")
+
+    if present_main_vars:
+        mask = base[present_main_vars].notna().all(axis=1)
+        base = base[mask].copy()
+        print(f"  Required columns: {present_main_vars}")
+        print(f"  Rows after stock-week filter: {len(base):,} "
+              f"(dropped {n_before - len(base):,})")
+    else:
+        print("  WARNING: no main variable columns found; filter skipped.")
+
+    # ----------------------------------------------------------
+    # 11) Save
     # ----------------------------------------------------------
     base = base.sort_values(["week", "permno"]).reset_index(drop=True)
 

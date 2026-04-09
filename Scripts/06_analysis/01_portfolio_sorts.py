@@ -440,6 +440,7 @@ def main():
 
     # Save spread return time series for cumulative figure
     if spread_returns:
+        INTER_DIR.mkdir(parents=True, exist_ok=True)
         sp_df = pd.DataFrame(spread_returns).reset_index().rename(columns={"index": "week"})
         sp_df.to_parquet(INTER_DIR / "spread_returns.parquet", index=False)
         print(f"Saved: spread_returns.parquet")

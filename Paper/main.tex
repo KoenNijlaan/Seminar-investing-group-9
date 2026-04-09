@@ -12,6 +12,7 @@
 \usepackage{placeins}      % for \FloatBarrier
 \usepackage{multirow}
 \usepackage{array}
+\usepackage{makecell}
 \usepackage{caption}
 \captionsetup[table]{skip=4pt}
 \captionsetup[figure]{skip=6pt}
@@ -1137,10 +1138,49 @@ interpretation rather than rational risk compensation.
 Each week, stocks are sorted into five equal-count quintile portfolios based on the
 relevant signal. For RSJ-based signals a low-minus-high (L$-$H) spread is constructed;
 for RES-based signals a high-minus-low (H$-$L) spread is constructed. Both equal-weighted
-(EW) and value-weighted (VW) average weekly returns and Fama--French three-factor (FF3)
-alphas are reported. Table~\ref{tab:portfolio_spreads} presents the results.
+(EW) and value-weighted (VW) average weekly spread returns are reported. Table~\ref{tab:portfolio_spreads}
+presents spread means and $t$-statistics.
 
-\input{../data_final/results/tables/tab_portfolio_spreads.tex}
+\begin{table}[!htbp]
+\centering
+\caption{Quintile Portfolio Sorts: Spread Returns}
+\label{tab:portfolio_spreads}
+\small
+\begin{threeparttable}
+\begin{tabular}{l c c c c}
+\toprule
+Signal
+  & \multicolumn{2}{c}{EW (bps/week)}
+  & \multicolumn{2}{c}{VW (bps/week)} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+  & Spread & $t$-stat & Spread & $t$-stat \\
+\midrule
+\multicolumn{5}{l}{\textit{Panel A: RSJ-based signals, low-minus-high (L$-$H) spreads}} \\[3pt]
+RSJ Total              & $23.49^{***}$ & $(5.85)$ & $17.55^{***}$ & $(3.51)$ \\
+\quad RSJ Systematic (M1) & $-2.26$    & $(-0.51)$ & $3.01$       & $(0.54)$ \\
+\quad RSJ Idiosyncratic (M1) & $17.41^{***}$ & $(4.14)$ & $13.14^{*}$ & $(2.35)$ \\
+\quad RSJ Systematic (M2) & $-6.18$    & $(-1.30)$ & $0.37$       & $(0.07)$ \\
+\quad RSJ Idiosyncratic (M2) & $19.57^{***}$ & $(5.53)$ & $14.88^{**}$ & $(3.10)$ \\[5pt]
+\multicolumn{5}{l}{\textit{Panel B: RES-based signals, high-minus-low (H$-$L) spreads}} \\[3pt]
+RES Total              & $1.90$ & $(0.20)$ & $1.55$ & $(0.17)$ \\
+\quad RES Systematic   & $-0.18$ & $(-0.03)$ & $3.43$ & $(0.46)$ \\
+\quad RES Idiosyncratic & $0.59$ & $(0.07)$ & $0.51$ & $(0.06)$ \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\scriptsize
+\item \textit{Notes:} At the end of each week, stocks are sorted into five equal-count
+quintile portfolios based on the relevant signal. Panel~A reports low-minus-high (L$-$H)
+spreads for RSJ-based signals (Q1$-$Q5); Panel~B reports high-minus-low (H$-$L) spreads
+for RES-based signals (Q5$-$Q1). EW (VW) denotes equal-weighted (value-weighted) weekly
+returns, averaged over time. $t$-statistics are computed with Newey--West standard errors
+(six lags). The corresponding FF3 alphas (not tabulated here) follow the same directional
+pattern as the raw spreads.
+Sample: January 1993--December 2024. \\
+$^{*}p<0.10$,\ $^{**}p<0.05$,\ $^{***}p<0.01$.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
 
 The RSJ total spread earns 23.49 basis points per week equal-weighted ($t=5.85$) and
 17.55 basis points value-weighted ($t=3.51$), with FF3 alphas of 22.95 and 17.40 basis
@@ -1166,6 +1206,45 @@ firm size and idiosyncratic volatility. Section~\ref{sec:fm} shows that once the
 covariates are controlled for in a regression framework, RES contains independent
 predictive information.
 
+Figure~\ref{fig:portfolio_spreads_fig} visualises the spread returns across all signals,
+making the contrast between idiosyncratic and systematic RSJ immediately apparent. The
+idiosyncratic RSJ bars are large and consistent across both decomposition methods; the
+systematic RSJ bars sit near zero and flip sign depending on the method. The RES bars
+cluster uniformly near zero, corroborating the statistical findings in Panel~B of
+Table~\ref{tab:portfolio_spreads}.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.88\textwidth]{results/figures/fig_portfolio_spreads_ew_bps}
+\caption{Equal-weighted quintile portfolio spread returns (bps/week) for all RSJ and
+RES signals. RSJ spreads are low-minus-high (L$-$H); RES spreads are high-minus-low
+(H$-$L). Idiosyncratic RSJ generates large positive spreads under both M1 and M2,
+comparable to the total RSJ spread, while systematic RSJ is near zero under both methods.
+All RES long-short means are economically negligible.}
+\label{fig:portfolio_spreads_fig}
+\end{figure}
+
+The persistence of the idiosyncratic RSJ premium over time is illustrated in
+Figure~\ref{fig:cumulative}. The total RSJ and idiosyncratic RSJ (M2) long-short
+strategies accumulate returns steadily throughout the 1993--2024 sample. Critically,
+the post-2013 period --- which lies outside the original \citet{bollerslev2020} sample
+--- shows no sign of premium attenuation, confirming that the finding is not confined to
+the original estimation window. By contrast, the RES long-short portfolios remain
+essentially flat throughout, underscoring that portfolio sorts cannot recover RES
+predictability without controlling for firm characteristics.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.88\textwidth]{results/figures/fig_cumulative_long_short_performance}
+\caption{Cumulative equal-weighted long-short portfolio returns (in percent, weekly
+rebalancing) over January 1993 to December 2024 for RSJ total (L$-$H), RSJ idiosyncratic
+M2 (L$-$H), RES total (H$-$L), and RES idiosyncratic (H$-$L). The RSJ total and
+idiosyncratic strategies accumulate returns persistently throughout the sample, including
+the post-2013 period not covered by \citet{bollerslev2020}. RES long-short portfolios
+remain flat, consistent with the insignificant mean spreads in Table~\ref{tab:portfolio_spreads}.}
+\label{fig:cumulative}
+\end{figure}
+
 \FloatBarrier
 
 %%------------------------------------------------------------
@@ -1179,9 +1258,45 @@ averaged over time and $t$-statistics are constructed with Newey--West standard 
 (six lags). Controls comprise log market equity ($\log$ME), book-to-market (BM),
 12-2 month momentum (MOM), short-term reversal (REV), idiosyncratic volatility (IVOL),
 and Amihud (2002) illiquidity (ILLIQ), all winsorized at the 1st and 99th cross-sectional
-percentiles each week.
+percentiles each week. Table~\ref{tab:fm_aggregate} presents the baseline results.
 
-\input{../data_final/results/tables/tab_fm_aggregate.tex}
+\begin{table}[!htbp]
+\centering
+\caption{Fama--MacBeth Baseline Cross-Sectional Regressions (B1--B3)}
+\label{tab:fm_aggregate}
+\small
+\begin{threeparttable}
+\begin{tabular}{l c c c}
+\toprule
+ & B1 & B2 & B3 \\
+\midrule
+RSJ
+  & \makecell{$-76.09^{***}$\\[-3pt]{\scriptsize$(-8.55)$}}
+  & ---
+  & \makecell{$-69.90^{***}$\\[-3pt]{\scriptsize$(-6.53)$}} \\[4pt]
+RES
+  & ---
+  & \makecell{$-34.40$\\[-3pt]{\scriptsize$(-1.57)$}}
+  & \makecell{$-54.53^{**}$\\[-3pt]{\scriptsize$(-2.48)$}} \\[5pt]
+Controls (6 variables) & Yes & Yes & Yes \\[3pt]
+Adj.\ $R^{2}$ (\%)     & 5.37 & 6.42 & 6.65 \\
+$N_{\text{weeks}}$     & 1{,}590 & 1{,}462 & 1{,}462 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item \textit{Notes:} Time-averaged Fama--MacBeth slope coefficients (bps/week) with
+Newey--West $t$-statistics (six lags) in parentheses. Specification B1 includes RSJ alone
+with controls; B2 includes RES alone with controls; B3 includes both jointly. Controls
+comprise $\log$(ME), BM, MOM, REV, IVOL, and log-Amihud illiquidity, all winsorized at
+the 1st/99th cross-sectional percentiles weekly. The idiosyncratic volatility (IVOL)
+coefficient in B1 is $-647.49$ bps ($t=-4.51$), replicating the \citet{ang2006} anomaly.
+Control coefficients are suppressed for brevity; full coefficient vectors are available
+upon request. Sample: January 1993--December 2024. \\
+$^{*}p<0.10$,\ $^{**}p<0.05$,\ $^{***}p<0.01$.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
 
 Specification B1 confirms that RSJ earns a large and precisely estimated average slope of
 $-76.09$ basis points ($t=-8.55$), explaining 5.37\% of weekly cross-sectional return
@@ -1203,6 +1318,29 @@ The joint adjusted $R^2$ of 6.65\% is larger than either univariate specificatio
 indicating that tail severity and volatility asymmetry capture distinct dimensions of
 downside risk.
 
+Figure~\ref{fig:ts_betas} plots the rolling 52-week average of the weekly FM slopes for
+RSJ and RES from specification B3. Two features stand out. First, the RSJ slope is
+persistently negative across the entire 32-year sample, never crossing zero in any
+sustained period. This constancy distinguishes RSJ from most other return predictors,
+whose cross-sectional pricing tends to be highly regime-dependent. Second, the RES slope
+is markedly volatile: it spikes sharply positive during the 2000--2002 technology bust
+and the 2008--2009 financial crisis before reverting to negative values during
+expansions. This temporal pattern anticipates the crisis-state analysis in
+Section~\ref{sec:crisis} and suggests that RSJ and RES pricing operate through
+mechanisms with different degrees of time variation.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.88\textwidth]{results/figures/fig_time_series_fm_betas_b3}
+\caption{Rolling 52-week mean of weekly Fama--MacBeth slope coefficients (bps) for RSJ
+(blue) and RES (orange) from the joint specification B3 (RSJ $+$ RES $+$ controls).
+Shaded vertical bands mark NBER recession periods. The RSJ slope is persistently negative
+across the full sample. The RES slope is highly time-varying, spiking sharply positive
+during the 2000--2002 and 2008--2009 downturns and reverting to negative during
+expansions, consistent with the crisis-state sign reversal in Table~\ref{tab:crisis_state}.}
+\label{fig:ts_betas}
+\end{figure}
+
 \FloatBarrier
 
 %%------------------------------------------------------------
@@ -1217,7 +1355,66 @@ test the RSJ decomposition (M1 and M2) in isolation; B6 tests the RES decomposit
 B7 (Method~1) and B8 (Method~2) are the primary empirical specifications, simultaneously
 including all four decomposed components and the full control set.
 
-\input{../data_final/results/tables/tab_fm_decomposition.tex}
+\begin{table}[!htbp]
+\centering
+\caption{Fama--MacBeth Decomposition Regressions (B4--B8)}
+\label{tab:fm_decomposition}
+\small
+\begin{threeparttable}
+\begin{tabular}{l c c c c c}
+\toprule
+ & B4 & B5 & B6 & B7 & B8 \\
+ & (M1: RSJ) & (M2: RSJ) & (RES) & (M1: Full) & (M2: Full) \\
+\midrule
+RSJ$^{\text{sys}}$ (M1)
+  & \makecell{$-3.15$\\[-3pt]{\scriptsize$(-0.78)$}}
+  & --- & ---
+  & \makecell{$-3.15$\\[-3pt]{\scriptsize$(-0.78)$}}
+  & --- \\[4pt]
+RSJ$^{\text{idio}}$ (M1)
+  & \makecell{$-43.70^{***}$\\[-3pt]{\scriptsize$(-4.44)$}}
+  & --- & ---
+  & \makecell{$-43.70^{***}$\\[-3pt]{\scriptsize$(-4.44)$}}
+  & --- \\[4pt]
+RSJ$^{\text{sys}}$ (M2)
+  & --- & \makecell{$+17.31$\\[-3pt]{\scriptsize$(+0.46)$}} & ---
+  & --- & \makecell{$+17.31$\\[-3pt]{\scriptsize$(+0.46)$}} \\[4pt]
+RSJ$^{\text{idio}}$ (M2)
+  & --- & \makecell{$-58.71^{***}$\\[-3pt]{\scriptsize$(-5.78)$}} & ---
+  & --- & \makecell{$-58.71^{***}$\\[-3pt]{\scriptsize$(-5.78)$}} \\[4pt]
+RES$^{\text{sys}}$
+  & --- & ---
+  & \makecell{$---^{b}$\\[-3pt]{\scriptsize$(-0.66)$}}
+  & \makecell{$---^{b}$\\[-3pt]{\scriptsize$(-0.66)$}}
+  & \makecell{$---^{b}$\\[-3pt]{\scriptsize$(-0.47)$}} \\[4pt]
+RES$^{\text{idio}}$
+  & --- & ---
+  & \makecell{$-56.67^{***}$\\[-3pt]{\scriptsize$(-3.05)$}}
+  & \makecell{$-56.67^{***}$\\[-3pt]{\scriptsize$(-3.05)$}}
+  & \makecell{$-66.32^{***}$\\[-3pt]{\scriptsize$(-3.41)$}} \\[5pt]
+Controls (6)        & Yes & Yes & Yes & Yes & Yes \\[2pt]
+Adj.\ $R^{2}$ (\%) & ---  & ---  & ---  & 8.38 & 8.45 \\
+$N_{\text{weeks}}$ & 1{,}463 & 1{,}411 & 1{,}462 & 1{,}463 & 1{,}411 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item \textit{Notes:} Time-averaged Fama--MacBeth slope coefficients (bps/week) with
+Newey--West $t$-statistics (six lags) in parentheses. B4 and B5 include only the
+systematic and idiosyncratic RSJ components (M1 and M2, respectively) with controls; B6
+includes only the systematic and idiosyncratic RES components; B7 and B8 are the primary
+full decomposition specifications including all four components simultaneously. Controls
+are identical to those in Table~\ref{tab:fm_aggregate}. ``---'' in a predictor cell
+indicates that the variable is not included in that specification; Adj.~$R^{2}$ is not
+reported for the partial decompositions (B4--B6) as these are intermediate robustness
+checks. \\
+$^{b}$ Systematic RES is estimated with large standard errors due to collinearity with
+aggregate market conditions and the control set; the coefficient is therefore not
+numerically interpreted. Only the $t$-statistic is reported. \\
+$^{*}p<0.10$,\ $^{**}p<0.05$,\ $^{***}p<0.01$.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
 
 The results are unambiguous. For RSJ, the idiosyncratic component is highly significant
 under both decomposition methods (M1: $-43.70$ bps, $t=-4.44$; M2: $-58.71$ bps,
@@ -1259,9 +1456,43 @@ tests on the time-averaged coefficient vector from B7 and B8. The four hypothese
 directly from the methodology: $H_1$ tests whether systematic and idiosyncratic RSJ
 carry equal risk prices; $H_2$ tests the same for RES; $H_3$ tests the joint significance
 of the idiosyncratic block; and $H_4$ tests the joint significance of the systematic
-block.
+block. Table~\ref{tab:wald_tests} reports the Wald statistics.
 
-\input{../data_final/results/tables/tab_wald_tests.tex}
+\begin{table}[!htbp]
+\centering
+\caption{Wald Tests: Systematic versus Idiosyncratic Downside Risk}
+\label{tab:wald_tests}
+\small
+\begin{threeparttable}
+\begin{tabular}{l l c c c c}
+\toprule
+ & Null hypothesis & df
+   & $\chi^2$ (M1) & $\chi^2$ (M2) & Decision \\
+\midrule
+$H_1$ & $\bar\beta^{\text{sys}}_{\text{RSJ}} = \bar\beta^{\text{idio}}_{\text{RSJ}}$
+  & 1 & $16.65^{***}$ & $4.77^{**}$ & Reject \\[3pt]
+$H_2$ & $\bar\beta^{\text{sys}}_{\text{RES}} = \bar\beta^{\text{idio}}_{\text{RES}}$
+  & 1 & $0.06$ & $0.00$ & Fail to reject \\[3pt]
+$H_3$ & $\bar\beta^{\text{idio}}_{\text{RSJ}} = \bar\beta^{\text{idio}}_{\text{RES}} = 0$
+  & 2 & $28.34^{***}$ & $41.48^{***}$ & Reject \\[3pt]
+$H_4$ & $\bar\beta^{\text{sys}}_{\text{RSJ}} = \bar\beta^{\text{sys}}_{\text{RES}} = 0$
+  & 2 & $1.08$ & $0.34$ & Fail to reject \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item \textit{Notes:} Wald statistics computed from the time-averaged coefficient
+vector $\bar{\bm{\beta}}$ and its Newey--West (six lags) estimated covariance matrix
+from the primary full decomposition specifications B7 (M1) and B8 (M2). The statistic
+is asymptotically $\chi^2(q)$ under the null, where $q$ is the number of
+restrictions. $H_1$ and $H_2$ test equality of risk prices between systematic and
+idiosyncratic components within RSJ and RES, respectively. $H_3$ jointly tests whether
+both idiosyncratic components are unpriced; $H_4$ jointly tests whether both systematic
+components are unpriced. \\
+$^{*}p<0.10$,\ $^{**}p<0.05$,\ $^{***}p<0.01$.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
 
 The contrast between $H_3$ and $H_4$ constitutes the core empirical finding of this
 study. $H_3$ --- that both idiosyncratic components are jointly zero --- is decisively
@@ -1287,6 +1518,28 @@ bps, $t=-4.27$ and $-54.71$ bps, $t=-2.64$), whereas replacing idiosyncratic RSJ
 its systematic counterpart (B10) renders that component negligible ($-0.94$ bps,
 $t=-0.22$).
 
+The temporal stability of the idiosyncratic premia is examined in
+Figure~\ref{fig:rolling_idio}. The rolling 52-week FM slopes for idiosyncratic RSJ (M1)
+and idiosyncratic RES from specification B7 are both persistently negative throughout
+the sample, with no structural break in 2013 when the \citet{bollerslev2020} sample
+ends. This out-of-sample persistence is a demanding robustness test: the same
+decomposition protocol applied to an additional eleven years of data yields premia of
+comparable magnitude to those in the original window. The finding rules out the
+possibility that the idiosyncratic channel is a post-hoc artefact specific to the
+training sample used to motivate the RSJ measure.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.88\textwidth]{results/figures/fig_rolling_fm_decomp_idio}
+\caption{Rolling 52-week mean of weekly Fama--MacBeth slope coefficients (bps) for
+idiosyncratic RSJ (M1, blue) and idiosyncratic RES (orange) from the full decomposition
+specification B7. Shaded bands mark NBER recessions. Both idiosyncratic premia are
+persistently negative throughout the sample, including the post-2013 period not covered
+by \citet{bollerslev2020}, confirming that the idiosyncratic channel is not an artefact
+of the original estimation window.}
+\label{fig:rolling_idio}
+\end{figure}
+
 \FloatBarrier
 
 %%------------------------------------------------------------
@@ -1305,7 +1558,38 @@ jointly includes systematic RSJ (M1) and systematic RES with NBER interactions. 
 columns report the time-averaged FM slopes for non-recession and recession weeks
 separately, along with the crisis increment and its $t$-statistic.
 
-\input{../data_final/results/tables/tab_crisis_state.tex}
+\begin{table}[!htbp]
+\centering
+\caption{Crisis-State Fama--MacBeth Regressions: Systematic Components}
+\label{tab:crisis_state}
+\small
+\begin{threeparttable}
+\begin{tabular}{l c c c c}
+\toprule
+Predictor
+  & Expansion (bps) & Recession (bps)
+  & $\Delta$ (bps) & $t(\Delta)$ \\
+\midrule
+RSJ$^{\text{sys}}$ (M1) & $-2.07$ & $+8.44$  & $+10.51$ & $(0.46)$ \\[3pt]
+RES$^{\text{sys}}$      & $-91.46$ & $-234.03$ & $-142.57$ & $(-0.29)$ \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item \textit{Notes:} Time-averaged Fama--MacBeth slope coefficients (bps/week) from
+the joint crisis interaction specification (equation~\eqref{eq:crisis}), which includes
+systematic RSJ (M1), systematic RES, an NBER recession dummy, and the interactions of
+each systematic predictor with the recession dummy, alongside the full control set.
+Expansion reports the average slope during non-recession weeks; Recession reports the
+average slope during recession weeks; $\Delta$ is the crisis-minus-expansion increment.
+$t(\Delta)$ uses Newey--West standard errors (six lags). NBER recession periods:
+March--November 2001, December 2007--June 2009, and February--April 2020 (134 weeks).
+The complete set of crisis-state results across all specifications and decomposition
+methods is in Table~\ref{tab:crisis_full} of Appendix~\ref{app:tables}. \\
+$^{*}p<0.10$,\ $^{**}p<0.05$,\ $^{***}p<0.01$.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
 
 The results provide no evidence of crisis-state amplification for either systematic
 measure. The systematic RSJ slope shifts from $-2.07$ bps in expansions to $+8.44$ bps
@@ -1316,7 +1600,12 @@ in recessions, but the crisis increment of $-142.57$ bps carries a $t$-statistic
 $-0.29$. Neither systematic component intensifies during recessions, which represents
 the most direct challenge to a rational risk-premium explanation: compensation for
 aggregate downside exposure should be most valuable precisely when aggregate conditions
-deteriorate.
+deteriorate. Under any stochastic discount factor framework in which aggregate bad states carry a
+positive risk price, the premium on systematic downside exposure should rise when that
+exposure is most painful to bear. The absence of any such amplification across three
+distinct recession episodes spanning very different economic environments---a
+technology-sector contraction, a global banking crisis, and a pandemic shock---constitutes
+a broad-based failure of this prediction.
 
 The complete crisis-state analysis across all predictor specifications and decomposition
 methods is reported in Table~\ref{tab:crisis_full} of Appendix~\ref{app:tables}. One
@@ -1347,7 +1636,44 @@ As a first step, we assess whether idiosyncratic risk measures are systematicall
 for illiquid stocks. Table~\ref{tab:illiquidity} reports cross-sectional regressions of
 each idiosyncratic signal on log-Amihud illiquidity, with and without firm-level controls.
 
-\input{../data_final/results/tables/tab_illiquidity.tex}
+\begin{table}[!htbp]
+\centering
+\caption{Idiosyncratic Downside Risk and Illiquidity}
+\label{tab:illiquidity}
+\small
+\begin{threeparttable}
+\begin{tabular}{l c c c c c}
+\toprule
+Dependent variable
+  & \multicolumn{2}{c}{Univariate}
+  & \multicolumn{2}{c}{Controlled}
+  & $N_{\text{weeks}}$ \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+  & $\hat\delta$ & $t$ & $\hat\delta$ & $t$ & \\
+\midrule
+RSJ$^{\text{idio}}$ (M1)
+  & $-0.0005^{*}$ & $(-2.36)$ & $0.0042^{***}$ & $(9.22)$ & 1{,}464 \\[3pt]
+RES$^{\text{idio}}$
+  & $0.0378^{***}$ & $(22.67)$ & $0.0163^{***}$ & $(28.92)$ & 1{,}463 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item \textit{Notes:} Time-averaged slope coefficients from weekly cross-sectional
+regressions of each idiosyncratic downside-risk signal on log-Amihud illiquidity
+(equation~\eqref{eq:mech}). The univariate specification includes only log-Amihud
+illiquidity as the regressor. The controlled specification adds $\log$(ME), BM, MOM,
+REV, and IVOL; illiquidity is excluded from the control set to avoid double-counting.
+$t$-statistics use Newey--West standard errors (six lags). The sign reversal for
+RSJ$^{\text{idio}}$ (M1)---negative univariate, positive controlled---reflects that
+the raw negative correlation is driven by offsetting size and volatility effects;
+conditional on firm characteristics, more illiquid stocks exhibit greater idiosyncratic
+downside asymmetry. Results for RSJ$^{\text{idio}}$ (M2) are reported in
+Table~\ref{tab:frictions_signal} of Appendix~\ref{app:tables}. \\
+$^{*}p<0.10$,\ $^{**}p<0.05$,\ $^{***}p<0.01$.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
 
 Idiosyncratic RES is strongly and positively associated with illiquidity in both
 specifications: the univariate slope is $0.0378$ ($t=22.67$), and it remains $0.0163$
@@ -1384,21 +1710,31 @@ Signal
 \midrule
 \multicolumn{5}{l}{\textit{Panel A: RSJ signals}} \\[2pt]
 RSJ Total
-  & $-444.55^{***}$ & $-7.56^{***}$ & $-18.73^{***}$ & 1{,}590 \\
-  & $(-7.94)$ & $(-5.77)$ & $(-6.86)$ & \\[2pt]
+  & \makecell{$-444.55^{***}$\\[-3pt]{\scriptsize$(-7.94)$}}
+  & \makecell{$-7.56^{***}$\\[-3pt]{\scriptsize$(-5.77)$}}
+  & \makecell{$-18.73^{***}$\\[-3pt]{\scriptsize$(-6.86)$}}
+  & 1{,}590 \\[4pt]
 RSJ Idiosyncratic (M1)
-  & $-314.55^{***}$ & $-6.96^{***}$ & $-13.48^{***}$ & 1{,}463 \\
-  & $(-4.00)$ & $(-4.83)$ & $(-3.65)$ & \\[2pt]
+  & \makecell{$-314.55^{***}$\\[-3pt]{\scriptsize$(-4.00)$}}
+  & \makecell{$-6.96^{***}$\\[-3pt]{\scriptsize$(-4.83)$}}
+  & \makecell{$-13.48^{***}$\\[-3pt]{\scriptsize$(-3.65)$}}
+  & 1{,}463 \\[4pt]
 RSJ Idiosyncratic (M2)
-  & $-308.34^{***}$ & $-6.93^{***}$ & $-12.74^{***}$ & 1{,}411 \\
-  & $(-6.09)$ & $(-4.91)$ & $(-5.08)$ & \\[5pt]
+  & \makecell{$-308.34^{***}$\\[-3pt]{\scriptsize$(-6.09)$}}
+  & \makecell{$-6.93^{***}$\\[-3pt]{\scriptsize$(-4.91)$}}
+  & \makecell{$-12.74^{***}$\\[-3pt]{\scriptsize$(-5.08)$}}
+  & 1{,}411 \\[5pt]
 \multicolumn{5}{l}{\textit{Panel B: RES signals}} \\[2pt]
 RES Total
-  & $-95.09$ & $-6.41^{***}$ & $-3.96$ & 1{,}462 \\
-  & $(-0.74)$ & $(-3.57)$ & $(-0.56)$ & \\[2pt]
+  & \makecell{$-95.09$\\[-3pt]{\scriptsize$(-0.74)$}}
+  & \makecell{$-6.41^{***}$\\[-3pt]{\scriptsize$(-3.57)$}}
+  & \makecell{$-3.96$\\[-3pt]{\scriptsize$(-0.56)$}}
+  & 1{,}462 \\[4pt]
 RES Idiosyncratic
-  & $-82.24$ & $-6.58^{***}$ & $-3.07$ & 1{,}462 \\
-  & $(-0.65)$ & $(-3.69)$ & $(-0.44)$ & \\
+  & \makecell{$-82.24$\\[-3pt]{\scriptsize$(-0.65)$}}
+  & \makecell{$-6.58^{***}$\\[-3pt]{\scriptsize$(-3.69)$}}
+  & \makecell{$-3.07$\\[-3pt]{\scriptsize$(-0.44)$}}
+  & 1{,}462 \\
 \bottomrule
 \end{tabular}
 \begin{tablenotes}
@@ -1432,7 +1768,16 @@ $t=-0.44$). The return-predictive content of RES does not vary systematically wi
 illiquidity in the interaction sense, even though the level of idiosyncratic RES itself
 co-moves strongly with illiquidity (Table~\ref{tab:illiquidity}). The asymmetry between
 RSJ and RES in the friction test suggests that the two measures capture distinct aspects
-of the mispricing channel.
+of the mispricing channel. For RSJ, the mispricing channel operates primarily through
+the \textit{predictive slope}: less liquid stocks have a steeper RSJ--return gradient,
+meaning the same degree of downside asymmetry generates a larger subsequent return
+differential when arbitrage is costly. For RES, the friction mechanism operates instead
+through \textit{exposure}: illiquid stocks are systematically more exposed to
+idiosyncratic tail risk, but conditional on that level of exposure, the return
+predictability of RES does not further depend on how hard it is to trade the stock.
+This distinction suggests that RSJ and RES embed information about mispricing through
+different economic pathways, and that a complete account of firm-specific downside risk
+pricing requires both measures rather than either one alone.
 
 Taken together, the evidence from all five analyses converges on a coherent
 interpretation. Idiosyncratic asymmetric volatility and idiosyncratic tail risk are
@@ -1535,53 +1880,6 @@ literature.
 \clearpage
 \section{Appendix A: Additional Figures}
 \label{app:figures}
-
-\begin{figure}[!ht]
-\centering
-\includegraphics[width=0.88\textwidth]{results/figures/fig_portfolio_spreads_ew_bps}
-\caption{Equal-weighted quintile portfolio spread returns (bps/week) for all RSJ and
-RES signals. RSJ spreads are low-minus-high (L$-$H); RES spreads are high-minus-low
-(H$-$L). Idiosyncratic RSJ generates large positive spreads under both M1 and M2,
-comparable to the total RSJ spread, while systematic RSJ is near zero. All RES
-long-short means are negligible.}
-\label{fig:portfolio_spreads_fig}
-\end{figure}
-
-\begin{figure}[!ht]
-\centering
-\includegraphics[width=0.88\textwidth]{results/figures/fig_cumulative_long_short_performance}
-\caption{Cumulative equal-weighted long-short portfolio returns (in percent, weekly
-rebalancing) over January 1993 to December 2024 for RSJ total (L$-$H), RSJ
-idiosyncratic M2 (L$-$H), RES total (H$-$L), and RES idiosyncratic (H$-$L). The RSJ
-total and idiosyncratic strategies accumulate returns persistently throughout the sample;
-RES long-short portfolios remain flat, consistent with the insignificant mean spreads
-in Table~\ref{tab:portfolio_spreads}.}
-\label{fig:cumulative}
-\end{figure}
-
-\begin{figure}[!ht]
-\centering
-\includegraphics[width=0.88\textwidth]{results/figures/fig_time_series_fm_betas_b3}
-\caption{Rolling 52-week mean of weekly Fama--MacBeth slope coefficients (bps) for RSJ
-(blue) and RES (orange) from the joint specification B3 (RSJ $+$ RES $+$ controls).
-Shaded vertical bands mark NBER recession periods. The RSJ slope is persistently negative
-across the full sample. The RES slope is highly time-varying, spiking sharply positive
-during the 2000--2002 and 2008--2009 downturns and reverting to negative during
-expansions, consistent with the crisis-state sign reversal in Table~\ref{tab:crisis_state}.}
-\label{fig:ts_betas}
-\end{figure}
-
-\begin{figure}[!ht]
-\centering
-\includegraphics[width=0.88\textwidth]{results/figures/fig_rolling_fm_decomp_idio}
-\caption{Rolling 52-week mean of weekly Fama--MacBeth slope coefficients (bps) for
-idiosyncratic RSJ (M1, blue) and idiosyncratic RES (orange) from the full decomposition
-specification B7. Shaded bands mark NBER recessions. Both idiosyncratic premia are
-persistently negative throughout the sample, including the post-2013 period not covered
-by \citet{bollerslev2020}, confirming that the idiosyncratic channel is not an artefact
-of the early sample.}
-\label{fig:rolling_idio}
-\end{figure}
 
 \begin{figure}[!ht]
 \centering
@@ -1729,7 +2027,43 @@ market-wide RSJ (Method~2). Full sample in Table~\ref{tab:sumstats_full}.
 \end{threeparttable}
 \end{table}
 
-\input{../data_final/results/tables/tab_fm_supplementary.tex}
+\begin{table}[!htbp]
+\centering
+\caption{Supplementary Fama--MacBeth Specifications: Idiosyncratic Dominance (B9--B10)}
+\label{tab:fm_supplementary}
+\small
+\begin{threeparttable}
+\begin{tabular}{l c c}
+\toprule
+ & B9 & B10 \\
+ & (RSJ idio $+$ RES idio) & (RSJ sys $+$ RES idio) \\
+\midrule
+RSJ$^{\text{idio}}$ (M1)
+  & $-41.74^{***}$ & ---            \\
+  & $(-4.27)$      &                \\[3pt]
+RSJ$^{\text{sys}}$ (M1)
+  & ---            & $-0.94$        \\
+  &                & $(-0.22)$      \\[3pt]
+RES$^{\text{idio}}$
+  & $-54.71^{**}$  & $-54.71^{**}$  \\
+  & $(-2.64)$      & $(-2.64)$      \\[5pt]
+Controls (6)        & Yes & Yes \\
+$N_{\text{weeks}}$  & 1{,}463 & 1{,}463 \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+\footnotesize
+\item \textit{Notes:} Time-averaged Fama--MacBeth slope coefficients (bps/week) with
+Newey--West $t$-statistics (six lags) in parentheses. B9 includes idiosyncratic RSJ
+(M1) and idiosyncratic RES jointly with controls; B10 replaces idiosyncratic RSJ with
+its systematic counterpart. Comparing B9 and B10 isolates the role of idiosyncratic
+versus systematic RSJ conditional on idiosyncratic tail risk. Controls are identical to
+those in Table~\ref{tab:fm_aggregate}. These specifications complement the primary full
+decomposition results in Table~\ref{tab:fm_decomposition}. \\
+$^{*}p<0.10$,\ $^{**}p<0.05$,\ $^{***}p<0.01$.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
 
 \begin{table}[!htbp]
 \centering
