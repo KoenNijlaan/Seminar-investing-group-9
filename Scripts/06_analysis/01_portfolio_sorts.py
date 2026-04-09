@@ -396,11 +396,11 @@ def build_figure(results_df):
 def build_cumulative_figure(spread_df: pd.DataFrame):
     """
     Cumulative EW long-short returns (in percent) for four strategies:
-      RSJ total (L-H), RSJ idio M2 (L-H), RES total (H-L), RES idio (H-L).
+      RSJ total (L-H), RSJ idio M1 (L-H), RES total (H-L), RES idio (H-L).
     """
     cols = {
         "rsj_weekly":    ("RSJ Total (L$-$H)",         "#1f77b4"),
-        "rsj_idio":      ("RSJ Idio M2 (L$-$H)",       "#2ca02c"),
+        "rsj_idio_weekly": ("RSJ Idio M1 (L$-$H)",       "#2ca02c"),
         "res_weekly":    ("RES Total (H$-$L)",          "#ff7f0e"),
         "res_idio_p025": ("RES Idio (H$-$L)",           "#d62728"),
     }
