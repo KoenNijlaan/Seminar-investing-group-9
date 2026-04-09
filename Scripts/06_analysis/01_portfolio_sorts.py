@@ -41,6 +41,12 @@ for d in (SORT_OUT, INTER_DIR, TABLE_DIR, FIG_DIR):
 NW_LAGS        = 6   # Newey-West lags — applied everywhere uniformly
 MIN_STOCKS     = 50
 
+NBER_PERIODS = [
+    ("2001-03-01", "2001-11-30"),
+    ("2007-12-01", "2009-06-30"),
+    ("2020-02-01", "2020-04-30"),
+]
+
 SORT_VARIABLES = {
     "rsj_weekly"     : "RSJ",
     "rsj_sys_weekly" : "RSJ Systematic (M1)",
@@ -387,6 +393,77 @@ def build_figure(results_df):
     return fig
 
 
+def build_cumulative_figure(spread_df: pd.DataFrame):
+    """
+    Cumulative EW long-short returns (in percent) for four strategies:
+      RSJ total (L-H), RSJ idio M2 (L-H), RES total (H-L), RES idio (H-L).
+    """
+    cols = {
+        "rsj_weekly":    ("RSJ Total (L$-$H)",         "#1f77b4"),
+        "rsj_idio":      ("RSJ Idio M2 (L$-$H)",       "#2ca02c"),
+        "res_weekly":    ("RES Total (H$-$L)",          "#ff7f0e"),
+        "res_idio_p025": ("RES Idio (H$-$L)",           "#d62728"),
+    }
+    present = {k: v for k, v in cols.items() if k in spread_df.columns}
+    if not present:
+        return None
+
+    sp = spread_df.copy()
+    sp["week"] = pd.to_datetime(sp["week"])
+    sp = sp.sort_values("week").set_index("week")
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    for start, end in NBER_PERIODS:
+        ax.axvspan(pd.Timestamp(start), pd.Timestamp(end),
+                   alpha=0.15, color="gray", lw=0)
+    # Mark end of Bollerslev sample
+    ax.axvline(pd.Timestamp("2013-12-31"), color="black", lw=0.8,
+               linestyle=":", label="End of Bollerslev (2020) sample")
+
+    for col, (label, color) in present.items():
+        cum = (sp[col].fillna(0) * 100).cumsum()
+        ax.plot(cum.index, cum.values, lw=1.5, color=color, label=label)
+
+    from matplotlib.patches import Patch
+    handles, lbls = ax.get_legend_handles_labels()
+    handles.append(Patch(facecolor="gray", alpha=0.3, label="NBER recession"))
+    ax.legend(handles=handles, fontsize=8, loc="upper left")
+    ax.set_ylabel("Cumulative Return (%)", fontsize=9)
+    ax.set_xlabel("Date", fontsize=9)
+    ax.set_title("Cumulative Long-Short Portfolio Returns (EW, weekly rebalancing)",
+                 fontsize=10, pad=8)
+    ax.axhline(0, color="black", lw=0.6, linestyle="--")
+    for spine in ax.spines.values():
+        spine.set_edgecolor("#aaaaaa")
+    ax.grid(False)
+    fig.tight_layout()
+    return fig
+
+
+def build_coverage_figure(panel: pd.DataFrame):
+    """
+    Number of stocks in the estimation panel by week.
+    """
+    counts = panel.groupby("week")["permno"].nunique().reset_index()
+    counts.columns = ["week", "n_stocks"]
+    counts["week"] = pd.to_datetime(counts["week"])
+    counts = counts.sort_values("week")
+
+    fig, ax = plt.subplots(figsize=(9, 3.5))
+    ax.fill_between(counts["week"], counts["n_stocks"],
+                    color="#2a9d8f", alpha=0.6, lw=0)
+    ax.plot(counts["week"], counts["n_stocks"], color="#2a9d8f", lw=0.8)
+    ax.set_ylabel("Number of stocks", fontsize=9)
+    ax.set_xlabel("Date", fontsize=9)
+    ax.set_title("Weekly Cross-Sectional Coverage (estimation panel)",
+                 fontsize=10, pad=8)
+    for spine in ax.spines.values():
+        spine.set_edgecolor("#aaaaaa")
+    ax.grid(False)
+    fig.tight_layout()
+    return fig
+
+
 # ============================================================
 # Main
 # ============================================================
@@ -451,13 +528,34 @@ def main():
     tex_path.write_text(tex, encoding="utf-8")
     print(f"Saved: {tex_path.name}")
 
-    # Figure
+    # Figure 1: spread bar chart
     fig = build_figure(combined)
     for ext in ("pdf", "png"):
         fpath = FIG_DIR / f"fig_portfolio_spreads_ew_bps.{ext}"
         fig.savefig(fpath, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: fig_portfolio_spreads_ew_bps.pdf/.png")
+
+    # Figure 2: cumulative long-short performance
+    sp_path = INTER_DIR / "spread_returns.parquet"
+    if sp_path.exists():
+        sp_df = pd.read_parquet(sp_path)
+        fig2 = build_cumulative_figure(sp_df)
+        if fig2 is not None:
+            for ext in ("pdf", "png"):
+                fig2.savefig(FIG_DIR / f"fig_cumulative_long_short_performance.{ext}",
+                             dpi=300, bbox_inches="tight")
+            plt.close(fig2)
+            print(f"Saved: fig_cumulative_long_short_performance.pdf/.png")
+
+    # Figure 3: weekly cross-section coverage
+    fig3 = build_coverage_figure(panel)
+    if fig3 is not None:
+        for ext in ("pdf", "png"):
+            fig3.savefig(FIG_DIR / f"fig_weekly_cross_section_coverage.{ext}",
+                         dpi=300, bbox_inches="tight")
+        plt.close(fig3)
+        print(f"Saved: fig_weekly_cross_section_coverage.pdf/.png")
 
     # Console summary
     print("\n" + "=" * 70)

@@ -50,6 +50,39 @@ MIN_STOCKS = 50
 WINSOR_LOW  = 0.01
 WINSOR_HIGH = 0.99
 
+NBER_PERIODS = [
+    ("2001-03-01", "2001-11-30"),
+    ("2007-12-01", "2009-06-30"),
+    ("2020-02-01", "2020-04-30"),
+]
+
+# Predictors shown in correlation heatmap
+HEATMAP_PREDS = [
+    "rsj_weekly", "rsj_sys_weekly", "rsj_idio_weekly",
+    "rsj_sys", "rsj_idio",
+    "res_weekly", "res_sys_p025", "res_idio_p025",
+    "me", "bm", "mom", "rev", "ivol", "illiq", "rvol", "rsk", "rkt",
+]
+HEATMAP_LABELS = {
+    "rsj_weekly":      "RSJ",
+    "rsj_sys_weekly":  r"RSJ$_\mathrm{sys}$ M1",
+    "rsj_idio_weekly": r"RSJ$_\mathrm{idio}$ M1",
+    "rsj_sys":         r"RSJ$_\mathrm{sys}$ M2",
+    "rsj_idio":        r"RSJ$_\mathrm{idio}$ M2",
+    "res_weekly":      "RES",
+    "res_sys_p025":    r"RES$_\mathrm{sys}$",
+    "res_idio_p025":   r"RES$_\mathrm{idio}$",
+    "me":    r"$\log$(ME)",
+    "bm":    "BM",
+    "mom":   "MOM",
+    "rev":   "REV",
+    "ivol":  "IVOL",
+    "illiq": "ILLIQ",
+    "rvol":  "RVOL",
+    "rsk":   "RSK",
+    "rkt":   "RKT",
+}
+
 CONTROLS = ["me", "bm", "mom", "rev", "ivol", "illiq", "rvol", "rsk", "rkt"]
 
 CTRL_LABEL = {
@@ -474,6 +507,132 @@ def build_figure(summary):
     return fig
 
 
+def _add_nber_shading(ax):
+    from matplotlib.patches import Patch
+    for start, end in NBER_PERIODS:
+        ax.axvspan(pd.Timestamp(start), pd.Timestamp(end),
+                   alpha=0.15, color="gray", lw=0)
+    return Patch(facecolor="gray", alpha=0.3, label="NBER recession")
+
+
+def build_rolling_b3_figure(inter_dir: Path):
+    """
+    Rolling 52-week mean FM slopes for RSJ and RES from spec B3.
+    Figure fig_time_series_fm_betas_b3.
+    """
+    path = inter_dir / "fm_coefs_B3.parquet"
+    if not path.exists():
+        print("  fm_coefs_B3.parquet not found — skipping fig_time_series_fm_betas_b3.")
+        return None
+    df = pd.read_parquet(path)
+    df["week"] = pd.to_datetime(df["week"])
+    needed = ["week", "rsj_weekly", "res_weekly"]
+    if not all(c in df.columns for c in needed):
+        print("  B3 parquet missing columns — skipping fig_time_series_fm_betas_b3.")
+        return None
+    df = df[needed].dropna().sort_values("week").set_index("week")
+
+    roll_rsj = df["rsj_weekly"].rolling(52, min_periods=26).mean() * 10_000
+    roll_res = df["res_weekly"].rolling(52, min_periods=26).mean() * 10_000
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    nber_patch = _add_nber_shading(ax)
+    ax.plot(roll_rsj.index, roll_rsj.values, color="#1f77b4", lw=1.5, label="RSJ")
+    ax.plot(roll_res.index, roll_res.values, color="#ff7f0e", lw=1.5, label="RES")
+    ax.axhline(0, color="black", lw=0.8, linestyle="--")
+    handles, lbls = ax.get_legend_handles_labels()
+    handles.append(nber_patch)
+    ax.legend(handles=handles, fontsize=9)
+    ax.set_ylabel("FM slope (bps/week, 52-week rolling mean)", fontsize=9)
+    ax.set_xlabel("Date", fontsize=9)
+    ax.set_title("Rolling FM Slopes: RSJ and RES (Specification B3)", fontsize=10, pad=8)
+    for spine in ax.spines.values():
+        spine.set_edgecolor("#aaaaaa")
+    ax.grid(False)
+    fig.tight_layout()
+    return fig
+
+
+def build_rolling_decomp_idio_figure(inter_dir: Path):
+    """
+    Rolling 52-week mean FM slopes for idiosyncratic RSJ (M1) and idiosyncratic RES
+    from spec B7. Figure fig_rolling_fm_decomp_idio.
+    """
+    path = inter_dir / "fm_coefs_B7.parquet"
+    if not path.exists():
+        print("  fm_coefs_B7.parquet not found — skipping fig_rolling_fm_decomp_idio.")
+        return None
+    df = pd.read_parquet(path)
+    df["week"] = pd.to_datetime(df["week"])
+    needed = ["week", "rsj_idio_weekly", "res_idio_p025"]
+    if not all(c in df.columns for c in needed):
+        print("  B7 parquet missing idio columns — skipping fig_rolling_fm_decomp_idio.")
+        return None
+    df = df[needed].dropna().sort_values("week").set_index("week")
+
+    roll_rsj_idio = df["rsj_idio_weekly"].rolling(52, min_periods=26).mean() * 10_000
+    roll_res_idio = df["res_idio_p025"].rolling(52, min_periods=26).mean() * 10_000
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+    nber_patch = _add_nber_shading(ax)
+    ax.plot(roll_rsj_idio.index, roll_rsj_idio.values,
+            color="#1f77b4", lw=1.5, label=r"RSJ$_\mathrm{idio}$ M1")
+    ax.plot(roll_res_idio.index, roll_res_idio.values,
+            color="#ff7f0e", lw=1.5, label=r"RES$_\mathrm{idio}$")
+    ax.axhline(0, color="black", lw=0.8, linestyle="--")
+    # Mark end of Bollerslev sample
+    ax.axvline(pd.Timestamp("2013-12-31"), color="black", lw=0.8, linestyle=":",
+               label="End of Bollerslev (2020) sample")
+    handles, lbls = ax.get_legend_handles_labels()
+    handles.append(nber_patch)
+    ax.legend(handles=handles, fontsize=9)
+    ax.set_ylabel("FM slope (bps/week, 52-week rolling mean)", fontsize=9)
+    ax.set_xlabel("Date", fontsize=9)
+    ax.set_title("Rolling FM Slopes: Idiosyncratic Components (Specification B7)",
+                 fontsize=10, pad=8)
+    for spine in ax.spines.values():
+        spine.set_edgecolor("#aaaaaa")
+    ax.grid(False)
+    fig.tight_layout()
+    return fig
+
+
+def build_correlation_heatmap(panel: pd.DataFrame):
+    """
+    Pairwise Pearson correlations among return predictors.
+    Figure fig_predictor_correlation_heatmap.
+    """
+    import matplotlib.colors as mcolors
+    cols = [c for c in HEATMAP_PREDS if c in panel.columns]
+    if len(cols) < 2:
+        print("  Too few predictor columns for heatmap — skipping.")
+        return None
+    sub = panel[cols].dropna()
+    if len(sub) < 100:
+        return None
+    corr = sub.corr(method="pearson")
+    labels = [HEATMAP_LABELS.get(c, c) for c in cols]
+
+    n = len(cols)
+    fig, ax = plt.subplots(figsize=(max(7, n * 0.65), max(5, n * 0.6)))
+    cmap = plt.cm.RdBu_r
+    norm = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
+    im = ax.imshow(corr.values, cmap=cmap, norm=norm, aspect="auto")
+    fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
+    ax.set_xticks(range(n))
+    ax.set_yticks(range(n))
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+    ax.set_yticklabels(labels, fontsize=8)
+    for i in range(n):
+        for j in range(n):
+            val = corr.values[i, j]
+            ax.text(j, i, f"{val:.2f}", ha="center", va="center",
+                    fontsize=6, color="black" if abs(val) < 0.7 else "white")
+    ax.set_title("Pairwise Pearson Correlations Among Return Predictors", fontsize=10, pad=8)
+    fig.tight_layout()
+    return fig
+
+
 # ============================================================
 # Main
 # ============================================================
@@ -528,7 +687,7 @@ def main():
     p.write_text(tex_s, encoding="utf-8")
     print(f"Saved: {p.name}")
 
-    # ---- Figure ----
+    # ---- Figures ----
     fig = build_figure(summary)
     if fig is not None:
         for ext in ("pdf", "png"):
@@ -536,6 +695,30 @@ def main():
             fig.savefig(fpath, dpi=300, bbox_inches="tight")
         plt.close(fig)
         print(f"Saved: fig_fm_coefficients_selected.pdf/.png")
+
+    fig_b3 = build_rolling_b3_figure(INTER_DIR)
+    if fig_b3 is not None:
+        for ext in ("pdf", "png"):
+            fig_b3.savefig(FIG_DIR / f"fig_time_series_fm_betas_b3.{ext}",
+                           dpi=300, bbox_inches="tight")
+        plt.close(fig_b3)
+        print(f"Saved: fig_time_series_fm_betas_b3.pdf/.png")
+
+    fig_idio = build_rolling_decomp_idio_figure(INTER_DIR)
+    if fig_idio is not None:
+        for ext in ("pdf", "png"):
+            fig_idio.savefig(FIG_DIR / f"fig_rolling_fm_decomp_idio.{ext}",
+                             dpi=300, bbox_inches="tight")
+        plt.close(fig_idio)
+        print(f"Saved: fig_rolling_fm_decomp_idio.pdf/.png")
+
+    fig_hmap = build_correlation_heatmap(panel)
+    if fig_hmap is not None:
+        for ext in ("pdf", "png"):
+            fig_hmap.savefig(FIG_DIR / f"fig_predictor_correlation_heatmap.{ext}",
+                             dpi=300, bbox_inches="tight")
+        plt.close(fig_hmap)
+        print(f"Saved: fig_predictor_correlation_heatmap.pdf/.png")
 
     # ---- Console summary ----
     print("\n" + "=" * 80)
@@ -556,8 +739,8 @@ def main():
             print(f"  Avg adj R² = {avg_rsq[spec]:.4f}")
 
     print("\n=== Done ===")
-    print("Run 03_wald_tests.py  → uses fm_coefs_B7.parquet and fm_coefs_B8.parquet")
-    print("Run 04_crisis_state.py → uses fm_coefs_B7.parquet and fm_coefs_B3.parquet")
+    print("Run 03_wald_tests.py  -- uses fm_coefs_B7.parquet and fm_coefs_B8.parquet")
+    print("Run 04_crisis_state.py -- uses fm_coefs_B7.parquet and fm_coefs_B3.parquet")
 
 
 if __name__ == "__main__":
