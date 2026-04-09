@@ -1,52 +1,52 @@
 """
-Crisis-state Fama-MacBeth analysis. Systematic M1 specification. NW(6) throughout.
+Crisis-state Fama-MacBeth following equation (crisis) in the paper.
 
-Interaction-term approach
-─────────────────────────
-The FM interaction regression is:
+Model (eq. crisis):
+    R_{i,w+1} = alpha_w
+                + beta_1  * RSJ^sys_{i,w}
+                + beta_2  * RES^sys_{i,w}
+                + beta_3  * C_w                   <- absorbed by alpha_w
+                + beta_4  * (RSJ^sys_{i,w} x C_w)
+                + beta_5  * (RES^sys_{i,w} x C_w)
+                + gamma_w' X_{i,w}
+                + eps_{i,w+1}
 
-    R_{i,w+1} = α_w + β₁ Z_{i,w} + β₃ (Z_{i,w} × nber_w) + γ_w' X_{i,w} + ε
+C_w = 1 during NBER recession weeks, 0 otherwise.
 
-Because nber_w is a SCALAR constant for all i in week w, the interaction term
-Z × nber_w is either 0 (expansion week) or Z (recession week). This makes
-nber_w and Z×nber_w collinear with the intercept and Z respectively within
-any single cross-section. The FM solution is to REPARAMETRISE:
+Because C_w is constant across all stocks in a given week, it is
+collinear with the FM intercept alpha_w and cannot be separately
+identified in a cross-sectional regression. beta_3 is therefore
+absorbed into alpha_w and not reported.
 
-    Z_exp   = Z × (1 − nber_w)   → equals Z in expansion weeks, 0 in crisis weeks
-    Z_cri   = Z × nber_w          → equals 0 in expansion weeks, Z in crisis weeks
+FM implementation:
+  Expansion weeks (C_w = 0):
+      cross-section OLS on [RSJ_sys, RES_sys, controls]
+      -> weekly slopes b1_w, b2_w
+  Recession weeks (C_w = 1):
+      cross-section OLS on [RSJ_sys, RES_sys, controls]
+      -> weekly slopes (b1+b4)_w, (b2+b5)_w
 
-Each week only ONE of these has cross-sectional variation, so the two columns
-are orthogonal across the full time series and separately identifiable:
+  beta_1          = NW mean of {b1_w}              expansion baseline
+  beta_2          = NW mean of {b2_w}              expansion baseline
+  beta_4          = crisis increment for RSJ_sys   (tested via pooled OLS)
+  beta_5          = crisis increment for RES_sys   (tested via pooled OLS)
+  beta_1 + beta_4 = NW mean of recession slopes    implied recession effect
+  beta_2 + beta_5 = NW mean of recession slopes    implied recession effect
 
-  • FM average of slope on Z_exp  →  β₁           (normal/expansion slope)
-  • FM average of slope on Z_cri  →  β₁ + β₃      (crisis slope)
-  • β₃ = crisis slope − normal slope                (interaction/crisis increment)
-  • t(β₃): from OLS regression β̂_Z_cri − β̂_Z_exp ~ nber_w with NW(6) SEs
+The crisis increment test: pool expansion and recession weekly slopes and
+run OLS of slope_t ~ 1 + C_w with NW(6) SEs. The coefficient on C_w is
+the interaction increment (beta_4 or beta_5).
 
-Joint crisis-state specification:
-        R_{i,w+1} = α_w
-                            + β1 RSJ_sys_{i,w}
-                            + β2 RES_sys_{i,w}
-                            + β3 C_w
-                            + β4 (RSJ_sys_{i,w} × C_w)
-                            + β5 (RES_sys_{i,w} × C_w)
-                            + γ'_w X_{i,w} + ε_{i,w+1}
-
-where C_w is the NBER recession indicator (week-level).
-
-Implemented via weekly reparameterisation:
-    expansion weeks: regress on RSJ_sys and RES_sys + controls
-    crisis weeks:    regress on RSJ_sys and RES_sys + controls
-Then recover interaction increments as crisis-minus-expansion slopes with NW(6) tests.
-
-NBER recession periods overlapping the sample (1993–2024):
-    2001-03-01 to 2001-11-30
-    2007-12-01 to 2009-06-30
-    2020-02-01 to 2020-04-30
+NBER recession periods in sample:
+    2001-03-01 to 2001-11-30   (Dot-com recession)
+    2007-12-01 to 2009-06-30   (Global Financial Crisis)
+    2020-02-01 to 2020-04-30   (Covid-19 recession)
+Source: National Bureau of Economic Research (nber.org)
 
 Outputs:
+    data_final/results/tables/tab_crisis_baseline.tex
     data_final/results/tables/tab_crisis_state.tex
-    data_final/results/figures/fig_rolling_fm_decomp_idio.{pdf,png}
+    data_final/results/figures/fig_rolling_fm_crisis.{pdf,png}
 """
 from pathlib import Path
 import numpy as np
@@ -55,6 +55,7 @@ import statsmodels.api as sm
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 
 # ============================================================
 # Settings
@@ -67,17 +68,29 @@ FIG_DIR    = ROOT / "data_final" / "results" / "figures"
 for d in (INTER_DIR, TABLE_DIR, FIG_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
-NW_LAGS    = 6
-MIN_STOCKS = 50
+NW_LAGS     = 6
+MIN_STOCKS  = 50
 WINSOR_LOW  = 0.01
 WINSOR_HIGH = 0.99
 
 CONTROLS = ["me", "bm", "mom", "rev", "ivol", "illiq", "rvol", "rsk", "rkt"]
 
-SYS_PREDS = ["rsj_sys_weekly", "res_sys_p025"]
-SYS_LABEL = {
-    "rsj_sys_weekly": "RSJ systematic (M1)",
-    "res_sys_p025": "RES systematic",
+# Systematic predictors: M1 (intraday decomp) and M2 (rolling regression)
+SYS_SPECS = {
+    "M1": ["rsj_sys_weekly", "res_sys_p025"] + CONTROLS,
+}
+SYS_FOCAL = {
+    "M1": ["rsj_sys_weekly", "res_sys_p025"],
+}
+
+PRED_LABEL = {
+    "rsj_sys_weekly": r"RSJ$_{\mathrm{sys}}$ (M1)",
+    "rsj_sys":        r"RSJ$_{\mathrm{sys}}$ (M2)",
+    "res_sys_p025":   r"RES$_{\mathrm{sys}}$",
+    "me":    r"$\log(\mathrm{ME})$",
+    "bm":    "BM",   "mom":   "MOM",   "rev":   "REV",
+    "ivol":  "IVOL", "illiq": "ILLIQ", "rvol":  "RVOL",
+    "rsk":   "RSK",  "rkt":   "RKT",
 }
 
 NBER_PERIODS = [
@@ -90,210 +103,463 @@ NBER_PERIODS = [
 # ============================================================
 # Helpers
 # ============================================================
-def winsorize_cs(s):
+def winsorize_cs(s: pd.Series) -> pd.Series:
     lo, hi = s.quantile(WINSOR_LOW), s.quantile(WINSOR_HIGH)
     return s.clip(lo, hi)
 
 
-def build_nber_indicator(week_series):
+def build_nber_indicator(week_series: pd.Series) -> pd.Series:
+    """Returns 1 for NBER recession weeks, 0 for expansion weeks."""
     week = pd.to_datetime(week_series).dt.normalize()
-    c = pd.Series(False, index=week.index)
+    out  = pd.Series(False, index=week.index)
     for start, end in NBER_PERIODS:
-        c |= (week >= pd.Timestamp(start)) & (week <= pd.Timestamp(end))
-    return c.astype(int)
+        out |= (week >= pd.Timestamp(start)) & (week <= pd.Timestamp(end))
+    return out.astype(int)
 
 
-def nw_mean_t(arr, lags):
-    y = np.asarray(arr, dtype=float)
-    y = y[np.isfinite(y)]
+def nw_mean(arr: np.ndarray, lags: int) -> tuple[float, float, float]:
+    """NW HAC mean. Returns (mean_bps, t, se_bps)."""
+    y = arr[np.isfinite(arr)]
     if len(y) < 10:
-        return np.nan, np.nan
+        return np.nan, np.nan, np.nan
     res = sm.OLS(y, np.ones((len(y), 1))).fit(
         cov_type="HAC", cov_kwds={"maxlags": lags, "use_correction": True}
     )
-    return float(res.params[0]), float(res.tvalues[0])
+    return float(res.params[0]) * 10_000, float(res.tvalues[0]), float(res.bse[0]) * 10_000
 
 
-def crisis_increment_test(betas_exp, betas_cri, nber_w_exp, nber_w_cri, lags):
+def crisis_increment(betas_exp: list, betas_cri: list, lags: int) -> tuple[float, float]:
     """
-    Recover β₃ = (crisis slope) − (expansion slope) and its t-stat.
+    Estimate beta_4 (or beta_5): the crisis interaction increment.
 
-    Pool the weekly slope estimates together with the nber indicator:
-        slope_w = β₁ + β₃ × nber_w + u_w
-    Here slope_w is the FM slope on Z, which in expansion weeks comes from
-    Z_exp and in crisis weeks from Z_cri (see module docstring).
-
-    nber_w_exp = 0 for all expansion weeks
-    nber_w_cri = 1 for all crisis weeks
+    Pools expansion and recession weekly slopes and runs:
+        slope_t = a + b * C_t + u_t,  C_t in {0, 1}
+    with NW(6) HAC standard errors. Returns (b * 10000, t_b).
     """
-    slopes = np.concatenate([np.asarray(betas_exp), np.asarray(betas_cri)])
-    nber   = np.concatenate([np.asarray(nber_w_exp), np.asarray(nber_w_cri)])
-    ok = np.isfinite(slopes) & np.isfinite(nber)
+    slopes = np.concatenate([
+        np.asarray(betas_exp, dtype=float),
+        np.asarray(betas_cri, dtype=float),
+    ])
+    nber = np.concatenate([
+        np.zeros(len(betas_exp)),
+        np.ones(len(betas_cri)),
+    ])
+    ok = np.isfinite(slopes)
     slopes, nber = slopes[ok], nber[ok]
     if len(slopes) < 10 or nber.sum() < 3:
         return np.nan, np.nan
-    X   = sm.add_constant(nber.reshape(-1, 1), has_constant="add")
+    X = sm.add_constant(nber.reshape(-1, 1), has_constant="add")
     res = sm.OLS(slopes, X).fit(
         cov_type="HAC", cov_kwds={"maxlags": lags, "use_correction": True}
     )
-    return float(res.params[1]), float(res.tvalues[1])
+    return float(res.params[1]) * 10_000, float(res.tvalues[1])
 
 
-def run_weekly_cs_interaction(df_week, pred_col, nber_w, controls):
-    """
-    Run one week's cross-section using the reparametrised interaction approach.
-
-    Returns (slope_exp, slope_cri) where exactly one of them is a float and
-    the other is NaN (since only one variant of the predictor has variation
-    in any given week).
-
-    Z_exp = Z * (1 - nber_w)
-    Z_cri = Z * nber_w
-    """
-    all_preds = [pred_col] + controls
-    sub = df_week[["R_i_w_plus_1"] + all_preds].dropna()
+def run_weekly_cs(df_week: pd.DataFrame, predictors: list[str]) -> dict | None:
+    """Single-week OLS. Returns {pred: coef, rsq_adj, n} or None."""
+    sub = df_week[["R_i_w_plus_1"] + predictors].dropna()
     if len(sub) < MIN_STOCKS:
-        return np.nan, np.nan
-
+        return None
     y     = pd.to_numeric(sub["R_i_w_plus_1"], errors="coerce").to_numpy(dtype=float)
-    Z     = pd.to_numeric(sub[pred_col],       errors="coerce").to_numpy(dtype=float)
-    ctrl  = sub[controls].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
-
-    if not (np.isfinite(y).all() and np.isfinite(Z).all() and np.isfinite(ctrl).all()):
-        return np.nan, np.nan
-
-    # Z_exp and Z_cri: exactly one has cross-sectional variation
-    Z_exp = Z * (1 - nber_w)   # = Z in expansion weeks, 0 in crisis weeks
-    Z_cri = Z * nber_w          # = 0 in expansion weeks, Z in crisis weeks
-
-    # Use the variant that has actual variation; include both in the spec so the
-    # coefficients on the OTHER controls are estimated on the same sample.
-    if nber_w == 0:
-        # Expansion week: Z_exp = Z, Z_cri = 0 → include Z_exp as predictor
-        X_mat = sm.add_constant(
-            np.column_stack([Z_exp, ctrl]), has_constant="add"
-        )
-        if not np.isfinite(X_mat).all():
-            return np.nan, np.nan
-        try:
-            res = sm.OLS(y, X_mat).fit()
-        except Exception:
-            return np.nan, np.nan
-        return float(res.params[1]), np.nan   # slope on Z_exp = β₁
-    else:
-        # Crisis week: Z_cri = Z, Z_exp = 0 → include Z_cri as predictor
-        X_mat = sm.add_constant(
-            np.column_stack([Z_cri, ctrl]), has_constant="add"
-        )
-        if not np.isfinite(X_mat).all():
-            return np.nan, np.nan
-        try:
-            res = sm.OLS(y, X_mat).fit()
-        except Exception:
-            return np.nan, np.nan
-        return np.nan, float(res.params[1])   # slope on Z_cri = β₁+β₃
-
-
-def run_weekly_joint_systematic(df_week, nber_w, controls):
-    """
-    Weekly cross-section for the joint systematic specification.
-    Returns dict with expansion and crisis slopes for RSJ_sys and RES_sys.
-    """
-    needed = ["R_i_w_plus_1"] + SYS_PREDS + controls
-    sub = df_week[needed].dropna()
-    if len(sub) < MIN_STOCKS:
-        return None
-
-    y = pd.to_numeric(sub["R_i_w_plus_1"], errors="coerce").to_numpy(dtype=float)
-    z1 = pd.to_numeric(sub["rsj_sys_weekly"], errors="coerce").to_numpy(dtype=float)
-    z2 = pd.to_numeric(sub["res_sys_p025"], errors="coerce").to_numpy(dtype=float)
-    ctrl = sub[controls].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
-    if not (np.isfinite(y).all() and np.isfinite(z1).all() and np.isfinite(z2).all() and np.isfinite(ctrl).all()):
-        return None
-
-    X = sm.add_constant(np.column_stack([z1, z2, ctrl]), has_constant="add")
-    if not np.isfinite(X).all():
+    X_raw = sub[predictors].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+    X     = sm.add_constant(X_raw, has_constant="add")
+    if not (np.isfinite(y).all() and np.isfinite(X).all()):
         return None
     try:
         res = sm.OLS(y, X).fit()
     except Exception:
         return None
+    out = {"n": len(sub), "rsq_adj": float(res.rsquared_adj)}
+    for i, p in enumerate(predictors):
+        out[p] = float(res.params[i + 1])
+    return out
 
-    if nber_w == 0:
-        return {
-            "rsj_exp": float(res.params[1]), "rsj_cri": np.nan,
-            "res_exp": float(res.params[2]), "res_cri": np.nan,
-        }
-    return {
-        "rsj_exp": np.nan, "rsj_cri": float(res.params[1]),
-        "res_exp": np.nan, "res_cri": float(res.params[2]),
+
+def run_fm_on_panel(panel: pd.DataFrame, specs: dict) -> tuple[dict, dict, dict]:
+    """
+    Run FM for each spec on the given panel.
+    Returns (summary, avg_rsq, n_weeks).
+      summary[spec][pred] = (mean_bps, t, se_bps)
+    """
+    summary = {}
+    avg_rsq = {}
+    n_weeks = {}
+    weeks   = sorted(panel["week"].unique())
+
+    for spec, predictors in specs.items():
+        missing = [p for p in predictors if p not in panel.columns]
+        if missing:
+            print(f"    SKIP {spec}: missing columns {missing}")
+            continue
+
+        betas    = {p: [] for p in predictors}
+        rsq_list = []
+        valid    = 0
+
+        for week in weeks:
+            result = run_weekly_cs(panel[panel["week"] == week], predictors)
+            if result is None:
+                continue
+            rsq_list.append(result["rsq_adj"])
+            valid += 1
+            for p in predictors:
+                betas[p].append(result[p])
+
+        if valid == 0:
+            continue
+
+        avg_rsq[spec] = float(np.mean(rsq_list))
+        n_weeks[spec] = valid
+        spec_summ = {}
+        for p in predictors:
+            arr = np.array(betas[p], dtype=float)
+            m, t, se = nw_mean(arr, NW_LAGS)
+            spec_summ[p] = (m, t, se)
+        summary[spec] = spec_summ
+
+    return summary, avg_rsq, n_weeks
+
+
+# ============================================================
+# Crisis interaction: collect weekly slopes per state
+# ============================================================
+def collect_weekly_slopes(panel: pd.DataFrame, nber_map: dict,
+                          specs: dict) -> dict:
+    """
+    For each spec and predictor, collect lists of weekly slopes
+    split by expansion (C=0) and recession (C=1) weeks.
+
+    Returns dict[spec][pred] = {"exp": [...], "cri": [...],
+                                 "rsq_exp": [...], "rsq_cri": [...]}
+    """
+    weeks = sorted(panel["week"].unique())
+    result = {
+        spec: {p: {"exp": [], "cri": [], "rsq_exp": [], "rsq_cri": []}
+               for p in predictors}
+        for spec, predictors in specs.items()
     }
 
+    for week in weeks:
+        df_w   = panel[panel["week"] == week]
+        nber_w = int(nber_map.get(week, 0))
+        for spec, predictors in specs.items():
+            missing = [p for p in predictors if p not in panel.columns]
+            if missing:
+                continue
+            out = run_weekly_cs(df_w, predictors)
+            if out is None:
+                continue
+            state = "cri" if nber_w == 1 else "exp"
+            rsq_key = "rsq_cri" if nber_w == 1 else "rsq_exp"
+            for p in predictors:
+                result[spec][p][state].append(out[p])
+            result[spec][predictors[0]][rsq_key].append(out["rsq_adj"])
 
-def _stars(t):
-    if t is None or (isinstance(t, float) and np.isnan(t)):
-        return ""
-    t = abs(float(t))
-    if t > 2.576: return "***"
-    if t > 1.96: return "**"
-    if t > 1.645: return "*"
+    return result
+
+
+# ============================================================
+# LaTeX helpers
+# ============================================================
+def _stars(t: float) -> str:
+    if t is None or not np.isfinite(t): return ""
+    a = abs(float(t))
+    if a > 2.576: return "***"
+    if a > 1.96:  return "**"
+    if a > 1.645: return "*"
     return ""
 
-
-def _fmt(val, t=None, dec=2):
-    if val is None or (isinstance(val, float) and np.isnan(val)):
-        return ""
+def _fmt(val, t=None, dec=2) -> str:
+    if val is None or not np.isfinite(float(val)): return ""
     s = f"{float(val):.{dec}f}"
-    if t is not None:
-        s += _stars(t)
+    if t is not None: s += _stars(t)
     return s
 
+def _fmt_pct(val) -> str:
+    if val is None or not np.isfinite(float(val)): return ""
+    return f"{float(val) * 100:.2f}\\%"
+
+def _cell(summ: dict, spec: str, pred: str) -> tuple[str, str]:
+    if spec not in summ or pred not in summ[spec]: return "", ""
+    m, t, _ = summ[spec][pred]
+    return _fmt(m, t), f"({t:.2f})" if np.isfinite(t) else ""
+
 
 # ============================================================
-# LaTeX table
+# Table 1: Full-sample baseline
 # ============================================================
-def build_latex(results):
+def build_baseline_table(summary: dict, avg_rsq: dict, n_weeks: dict) -> str:
+    """
+    Full-sample FM for systematic spec (M1 and M2).
+    Identical layout to the main FM tables: focal vars + controls,
+    t-stats below each coefficient, N weeks, avg adj R².
+    Serves as the reference before the crisis interaction table.
+    """
+    specs  = [s for s in ["M1", "M2"] if s in summary]
+    labels = {"M1": r"(M1) RSJ$_\mathrm{sys}$ + RES$_\mathrm{sys}$"}
+    col_spec = "l" + "c" * len(specs)
+
+    all_focal = []
+    for s in specs:
+        for v in SYS_FOCAL.get(s, []):
+            if v not in all_focal:
+                all_focal.append(v)
+    rows_vars = all_focal + CONTROLS
+
     lines = []
     lines += [r"\begin{table}[htbp]", r"\centering", r"\begin{threeparttable}"]
-    lines += [r"\caption{Crisis-State Fama--MacBeth: Systematic Components with NBER Interactions (M1)}"]
-    lines += [r"\label{tab:crisis_state}"]
-    lines += [r"\begin{tabular}{lcccc}"]
+    lines += [r"\caption{Crisis-State Analysis: Full-Sample Baseline (Systematic Components)}"]
+    lines += [r"\label{tab:crisis_baseline}"]
+    lines += [rf"\begin{{tabular}}{{{col_spec}}}"]
     lines += [r"\toprule"]
-    lines += [r"Predictor & Normal $\hat{\beta}_1$ & Crisis $\hat{\beta}_1{+}\hat{\beta}_3$"
-              r" & $\hat{\beta}_3$ (interact.) & $t(\hat{\beta}_3)$ \\"]
-    lines += [r" & (bps/week) & (bps/week) & (bps/week) & \\"]
+    lines += ["  & " + " & ".join(labels[s] for s in specs) + r" \\"]
     lines += [r"\midrule"]
-    for r in results:
-        lbl = r["label"].replace("_", r"\_")
-        n_s = _fmt(r["normal_bps"],  r["t_normal"])
-        c_s = _fmt(r["crisis_bps"],  r["t_crisis"])
-        d_s = _fmt(r["delta_bps"],   r["t_delta"])
-        t_s = f"{r['t_delta']:.2f}"  if np.isfinite(r["t_delta"])  else ""
-        lines.append(f"{lbl} & {n_s} & {c_s} & {d_s} & {t_s} \\\\")
-        t_n = f"({r['t_normal']:.2f})" if np.isfinite(r["t_normal"]) else ""
-        t_c = f"({r['t_crisis']:.2f})" if np.isfinite(r["t_crisis"]) else ""
-        lines.append(f" & {t_n} & {t_c} & & \\\\")
+
+    for v in rows_vars:
+        if all(v not in summary.get(s, {}) for s in specs):
+            continue
+        coef_row = [PRED_LABEL.get(v, v)] + [_cell(summary, s, v)[0] for s in specs]
+        t_row    = [""]                    + [_cell(summary, s, v)[1] for s in specs]
+        lines.append(" & ".join(coef_row) + r" \\")
+        lines.append(" & ".join(t_row)    + r" \\")
+
+    lines += [r"\midrule"]
+    lines += [r"$N_{\text{weeks}}$" + " & " +
+              " & ".join(str(n_weeks.get(s, "--")) for s in specs) + r" \\"]
+    lines += [r"Avg.\ Adj.\ $R^2$" + " & " +
+              " & ".join(_fmt_pct(avg_rsq.get(s)) for s in specs) + r" \\"]
     lines += [r"\bottomrule", r"\end{tabular}"]
     lines += [r"\begin{tablenotes}", r"\small",
-              r"\item Notes: Joint systematic specification with RSJ$_{\mathrm{sys}}$ (M1),"
-              r" RES$_{\mathrm{sys}}$, and their interactions with NBER crisis state."
-              r" Reported normal and crisis slopes are time-averaged FM coefficients"
-              r" from expansion and recession weeks, respectively."
-              r" The interaction increment is computed as crisis-minus-expansion slope"
-              r" with NW(6) standard errors."
-              r" NBER recessions: 2001-03 to 11, 2007-12 to 2009-06, 2020-02 to 04."
-              r" Full control set $X$. All coefficients in bps/week."
+              r"\item Notes: Full-sample Fama--MacBeth regressions. Dependent variable"
+              r" is $R_{i,w+1}$. M1 uses the intraday decomposition."
+              r" All slope coefficients in bps/week ($\times 10^4$)."
+              r" Controls $X$: $\log(\mathrm{ME})$, BM, MOM, REV, IVOL, ILLIQ,"
+              r" RVOL, RSK, RKT (winsorized 1/99\% per week)."
+              r" $t$-statistics in parentheses use Newey--West HAC with 6 lags."
               r" $^{*}p<0.10$, $^{**}p<0.05$, $^{***}p<0.01$.",
               r"\end{tablenotes}", r"\end{threeparttable}", r"\end{table}"]
     return "\n".join(lines)
 
 
 # ============================================================
-# Figure: rolling 52-week FM slopes for RSJ_sys and RES_sys
+# Table 2: Crisis interaction
 # ============================================================
-def build_rolling_figure(df_b1):
-    df = df_b1[["week", "rsj_sys_weekly", "res_sys_p025"]].copy()
-    df = df.sort_values("week").set_index("week")
+def build_crisis_table(slopes: dict,
+                       n_exp_weeks: int, n_cri_weeks: int) -> str:
+    """
+    Reports the full crisis-interaction specification for M1 and M2.
+
+    For each systematic predictor Z in {RSJ_sys, RES_sys}:
+
+      beta_1   = expansion baseline slope       (NW mean of expansion-week slopes)
+      beta_4   = crisis increment               (pooled OLS on crisis dummy, NW HAC)
+      beta_1+4 = implied recession slope        (NW mean of recession-week slopes)
+
+    Layout (two columns: M1, M2):
+      Panel A — Expansion baseline (beta_1, beta_2)
+      Panel B — Crisis interaction increment (beta_4, beta_5)
+      Panel C — Implied recession slopes (beta_1+beta_4, beta_2+beta_5)
+      Footer  — N expansion weeks, N recession weeks, Avg adj R² per state
+    """
+    specs = [s for s in ["M1", "M2"] if s in slopes]
+    col_spec = "l" + "c" * len(specs)
+    labels = {"M1": r"M1 (intraday decomp.)"}
+
+    # Precompute all needed statistics
+    stat = {}   # stat[spec][pred] = dict with expansion/crisis/increment entries
+    for spec in specs:
+        stat[spec] = {}
+        for pred in SYS_FOCAL.get(spec, []):
+            d    = slopes[spec][pred]
+            exp  = np.array(d["exp"], dtype=float)
+            cri  = np.array(d["cri"], dtype=float)
+
+            m_e, t_e, _  = nw_mean(exp, NW_LAGS)   # beta_1
+            m_c, t_c, _  = nw_mean(cri, NW_LAGS)   # beta_1 + beta_4
+            inc, t_inc   = crisis_increment(d["exp"], d["cri"], NW_LAGS)  # beta_4
+
+            rsq_exp = float(np.mean([x for x in d["rsq_exp"] if np.isfinite(x)])) \
+                      if d["rsq_exp"] else np.nan
+            rsq_cri = float(np.mean([x for x in d["rsq_cri"] if np.isfinite(x)])) \
+                      if d["rsq_cri"] else np.nan
+
+            stat[spec][pred] = {
+                "exp": (m_e, t_e),     # expansion baseline
+                "inc": (inc, t_inc),   # crisis increment (interaction)
+                "cri": (m_c, t_c),     # implied recession slope
+                "rsq_exp": rsq_exp,
+                "rsq_cri": rsq_cri,
+                "n_exp": len(exp[np.isfinite(exp)]),
+                "n_cri": len(cri[np.isfinite(cri)]),
+            }
+
+    def coef_t_rows(pred, state_key, panel_label_first=False):
+        """Returns (coef_row_str, t_row_str) for a predictor across all specs."""
+        lbl = PRED_LABEL.get(pred, pred)
+        coef_cells = []
+        t_cells    = []
+        for spec in specs:
+            if pred not in stat.get(spec, {}):
+                coef_cells += [""]
+                t_cells    += [""]
+                continue
+            val, t = stat[spec][pred][state_key]
+            coef_cells.append(_fmt(val, t))
+            t_cells.append(f"({t:.2f})" if np.isfinite(t) else "")
+        return (lbl + " & " + " & ".join(coef_cells) + r" \\",
+                "  & " + " & ".join(t_cells) + r" \\")
+
+    lines = []
+    lines += [r"\begin{table}[htbp]", r"\centering", r"\begin{threeparttable}"]
+    lines += [r"\caption{Crisis-State Fama--MacBeth: Systematic Components"
+              r" with NBER Recession Interactions}"]
+    lines += [r"\label{tab:crisis_state}"]
+    lines += [rf"\begin{{tabular}}{{{col_spec}}}"]
+    lines += [r"\toprule"]
+    lines += ["  & " + " & ".join(labels[s] for s in specs) + r" \\"]
+    lines += [r"\midrule"]
+
+    # ---- Panel A: Expansion baseline ----
+    lines += [r"\multicolumn{" + str(1 + len(specs)) + r"}{l}"
+              r"{\textit{Panel A: Expansion baseline ($\hat{\beta}_1$,"
+              r" $\hat{\beta}_2$) --- non-recession weeks}} \\"]
+
+    all_focal_preds = []
+    for spec in specs:
+        for p in SYS_FOCAL.get(spec, []):
+            if p not in all_focal_preds:
+                all_focal_preds.append(p)
+
+    for pred in all_focal_preds:
+        lbl = PRED_LABEL.get(pred, pred)
+        coef_cells, t_cells = [], []
+        for spec in specs:
+            # find matching pred in this spec (RSJ_sys label same for M1/M2)
+            matching = [p for p in SYS_FOCAL.get(spec, [])
+                        if PRED_LABEL.get(p) == PRED_LABEL.get(pred)
+                        or p == pred]
+            if not matching or matching[0] not in stat.get(spec, {}):
+                coef_cells += [""]
+                t_cells    += [""]
+            else:
+                val, t = stat[spec][matching[0]]["exp"]
+                coef_cells.append(_fmt(val, t))
+                t_cells.append(f"({t:.2f})" if np.isfinite(t) else "")
+        lines.append(lbl + " & " + " & ".join(coef_cells) + r" \\")
+        lines.append("  & " + " & ".join(t_cells) + r" \\")
+
+    # ---- Panel B: Crisis interaction increment ----
+    lines += [r"\midrule"]
+    lines += [r"\multicolumn{" + str(1 + len(specs)) + r"}{l}"
+              r"{\textit{Panel B: Crisis interaction increment ($\hat{\beta}_4$,"
+              r" $\hat{\beta}_5$) --- change during NBER recessions}} \\"]
+
+    for pred in all_focal_preds:
+        lbl = PRED_LABEL.get(pred, pred) + r" $\times$ Crisis"
+        coef_cells, t_cells = [], []
+        for spec in specs:
+            matching = [p for p in SYS_FOCAL.get(spec, [])
+                        if PRED_LABEL.get(p) == PRED_LABEL.get(pred) or p == pred]
+            if not matching or matching[0] not in stat.get(spec, {}):
+                coef_cells += [""]
+                t_cells    += [""]
+            else:
+                val, t = stat[spec][matching[0]]["inc"]
+                coef_cells.append(_fmt(val, t))
+                t_cells.append(f"({t:.2f})" if np.isfinite(t) else "")
+        lines.append(lbl + " & " + " & ".join(coef_cells) + r" \\")
+        lines.append("  & " + " & ".join(t_cells) + r" \\")
+
+    # ---- Panel C: Implied recession slopes ----
+    lines += [r"\midrule"]
+    lines += [r"\multicolumn{" + str(1 + len(specs)) + r"}{l}"
+              r"{\textit{Panel C: Implied recession slopes"
+              r" ($\hat{\beta}_1{+}\hat{\beta}_4$, $\hat{\beta}_2{+}\hat{\beta}_5$)}} \\"]
+
+    for pred in all_focal_preds:
+        lbl = PRED_LABEL.get(pred, pred) + " (recession)"
+        coef_cells, t_cells = [], []
+        for spec in specs:
+            matching = [p for p in SYS_FOCAL.get(spec, [])
+                        if PRED_LABEL.get(p) == PRED_LABEL.get(pred) or p == pred]
+            if not matching or matching[0] not in stat.get(spec, {}):
+                coef_cells += [""]
+                t_cells    += [""]
+            else:
+                val, t = stat[spec][matching[0]]["cri"]
+                coef_cells.append(_fmt(val, t))
+                t_cells.append(f"({t:.2f})" if np.isfinite(t) else "")
+        lines.append(lbl + " & " + " & ".join(coef_cells) + r" \\")
+        lines.append("  & " + " & ".join(t_cells) + r" \\")
+
+    # ---- Footer ----
+    lines += [r"\midrule"]
+    # N expansion weeks (use first spec's first pred)
+    n_exp_cells, n_cri_cells = [], []
+    rsq_exp_cells, rsq_cri_cells = [], []
+    for spec in specs:
+        first_pred = SYS_FOCAL.get(spec, [None])[0]
+        if first_pred and first_pred in stat.get(spec, {}):
+            s = stat[spec][first_pred]
+            n_exp_cells.append(str(s["n_exp"]))
+            n_cri_cells.append(str(s["n_cri"]))
+            rsq_exp_cells.append(_fmt_pct(s["rsq_exp"]))
+            rsq_cri_cells.append(_fmt_pct(s["rsq_cri"]))
+        else:
+            n_exp_cells  += ["--"]
+            n_cri_cells  += ["--"]
+            rsq_exp_cells += [""]
+            rsq_cri_cells += [""]
+
+    lines += [r"$N_{\text{expansion}}$" + " & " + " & ".join(n_exp_cells) + r" \\"]
+    lines += [r"$N_{\text{recession}}$"  + " & " + " & ".join(n_cri_cells) + r" \\"]
+    lines += [r"Avg.\ Adj.\ $R^2$ (exp.)" + " & " +
+              " & ".join(rsq_exp_cells) + r" \\"]
+    lines += [r"Avg.\ Adj.\ $R^2$ (rec.)" + " & " +
+              " & ".join(rsq_cri_cells) + r" \\"]
+    lines += [r"\bottomrule", r"\end{tabular}"]
+
+    nber_str = "; ".join(f"{s} to {e}" for s, e in NBER_PERIODS)
+    lines += [r"\begin{tablenotes}", r"\small",
+              r"\item Notes: Fama--MacBeth interaction regressions following"
+              r" equation~(\ref{eq:crisis}). The crisis-state dummy $C_w = 1$"
+              r" during NBER recession weeks (0 otherwise)."
+              r" Because $C_w$ is constant across all stocks within a week, it is"
+              r" absorbed by the FM intercept $\alpha_w$ and not separately reported."
+              r" Panel~A reports expansion-week FM slopes ($\hat\beta_1$,"
+              r" $\hat\beta_2$); Panel~B the crisis increment"
+              r" ($\hat\beta_4$, $\hat\beta_5$) estimated via pooled OLS of"
+              r" weekly slopes on $C_w$ with NW(6) standard errors;"
+              r" Panel~C the implied recession slopes"
+              r" ($\hat\beta_1{+}\hat\beta_4$, $\hat\beta_2{+}\hat\beta_5$)"
+              r" as the NW mean of recession-week FM slopes."
+              rf" NBER recession periods: {nber_str}."
+              r" Source: National Bureau of Economic Research."
+              r" All coefficients in bps/week ($\times 10^4$)."
+              r" Controls $X$ included but not reported."
+              r" $^{*}p<0.10$, $^{**}p<0.05$, $^{***}p<0.01$.",
+              r"\end{tablenotes}", r"\end{threeparttable}", r"\end{table}"]
+    return "\n".join(lines)
+
+
+# ============================================================
+# Figure: rolling 52-week FM slopes
+# ============================================================
+def build_rolling_figure() -> plt.Figure | None:
+    b7_path = INTER_DIR / "fm_coefs_B7.parquet"
+    if not b7_path.exists():
+        print(f"  {b7_path.name} not found — run 02_fama_macbeth.py first.")
+        return None
+    df = pd.read_parquet(b7_path)
+    df["week"] = pd.to_datetime(df["week"])
+    needed = ["week", "rsj_sys_weekly", "res_sys_p025"]
+    if not all(c in df.columns for c in needed):
+        print("  B7 parquet missing sys columns — skipping figure.")
+        return None
+    df = df[needed].dropna().sort_values("week").set_index("week")
+    if len(df) < 52:
+        return None
+
     roll_rsj = df["rsj_sys_weekly"].rolling(52, min_periods=26).mean() * 10_000
     roll_res = df["res_sys_p025"].rolling(52, min_periods=26).mean() * 10_000
 
@@ -306,10 +572,13 @@ def build_rolling_figure(df_b1):
     ax.plot(roll_res.index, roll_res.values, color="#ff7f0e", lw=1.5,
             label=r"RES$_\mathrm{sys}$")
     ax.axhline(0, color="black", lw=0.8, linestyle="--")
+    handles, lbls = ax.get_legend_handles_labels()
+    handles.append(Patch(facecolor="gray", alpha=0.3, label="NBER recession"))
+    ax.legend(handles=handles, fontsize=9)
     ax.set_ylabel("FM slope (bps/week, 52-week rolling mean)", fontsize=9)
     ax.set_xlabel("Date", fontsize=9)
-    ax.set_title("Rolling FM Slopes: Systematic Components", fontsize=10, pad=8)
-    ax.legend(fontsize=9)
+    ax.set_title("Rolling FM Slopes: Systematic Components with NBER Recessions",
+                 fontsize=10, pad=8)
     for spine in ax.spines.values():
         spine.set_edgecolor("#aaaaaa")
     ax.grid(False)
@@ -321,7 +590,7 @@ def build_rolling_figure(df_b1):
 # Main
 # ============================================================
 def main():
-    print("=== Crisis-State Fama-MacBeth [Joint Systematic Spec] ===\n")
+    print("=== Crisis-State Fama-MacBeth ===\n")
 
     panel = pd.read_parquet(PANEL_FILE)
     panel["week"] = pd.to_datetime(panel["week"]).dt.normalize()
@@ -334,105 +603,84 @@ def main():
         if c in panel.columns:
             panel[c] = panel.groupby("week")[c].transform(winsorize_cs)
 
+    # NBER indicator
     panel["nber"] = build_nber_indicator(panel["week"])
-    nber_map = (panel[["week","nber"]]
-                .drop_duplicates()
-                .set_index("week")["nber"]
-                .to_dict())
+    nber_map = (panel[["week", "nber"]].drop_duplicates()
+                .set_index("week")["nber"].to_dict())
 
-    n_crisis    = sum(v == 1 for v in nber_map.values())
-    n_expansion = sum(v == 0 for v in nber_map.values())
-    print(f"Panel: {len(panel):,} stock-weeks | {panel['week'].nunique():,} weeks")
-    print(f"  Expansion weeks: {n_expansion}  |  Crisis weeks: {n_crisis}\n")
+    n_exp = sum(v == 0 for v in nber_map.values())
+    n_cri = sum(v == 1 for v in nber_map.values())
+    print(f"Panel: {len(panel):,} stock-weeks | {panel['week'].nunique():,} weeks total")
+    print(f"  Expansion weeks : {n_exp}")
+    print(f"  Recession weeks : {n_cri}")
+    print(f"  NBER periods    : {'; '.join(f'{s} to {e}' for s,e in NBER_PERIODS)}\n")
 
-    weeks = sorted(panel["week"].unique())
-    for c in SYS_PREDS:
-        if c not in panel.columns:
-            raise KeyError(f"Missing required systematic predictor: {c}")
-
-    rsj_exp, rsj_cri = [], []
-    res_exp, res_cri = [], []
-    nber_exp_vec, nber_cri_vec = [], []
-
-    for week in weeks:
-        df_w = panel[panel["week"] == week]
-        nber_w = int(nber_map.get(week, 0))
-        out = run_weekly_joint_systematic(df_w, nber_w, CONTROLS)
-        if out is None:
+    # ----------------------------------------------------------
+    # Table 1: Full-sample baseline
+    # ----------------------------------------------------------
+    print("--- Full-sample baseline (M1) ---")
+    full_summ, full_rsq, full_nw = run_fm_on_panel(panel, SYS_SPECS)
+    for spec in ["M1"]:
+        if spec not in full_summ:
             continue
+        for pred in SYS_FOCAL.get(spec, []):
+            if pred not in full_summ[spec]:
+                continue
+            m, t, _ = full_summ[spec][pred]
+            st = "***" if abs(t) > 2.576 else "**" if abs(t) > 1.96 else \
+                 "*" if abs(t) > 1.645 else ""
+            print(f"  {spec} {PRED_LABEL.get(pred, pred):<35} "
+                  f"{m:>8.2f}{st:<3} (t={t:.2f})")
 
-        if np.isfinite(out["rsj_exp"]):
-            rsj_exp.append(out["rsj_exp"])
-            res_exp.append(out["res_exp"])
-            nber_exp_vec.append(0)
-        if np.isfinite(out["rsj_cri"]):
-            rsj_cri.append(out["rsj_cri"])
-            res_cri.append(out["res_cri"])
-            nber_cri_vec.append(1)
+    tex_base = build_baseline_table(full_summ, full_rsq, full_nw)
+    p = TABLE_DIR / "tab_crisis_baseline.tex"
+    p.write_text(tex_base, encoding="utf-8")
+    print(f"\nSaved: {p.name}")
 
-    m_rsj_exp, t_rsj_exp = nw_mean_t(rsj_exp, NW_LAGS)
-    m_rsj_cri, t_rsj_cri = nw_mean_t(rsj_cri, NW_LAGS)
-    d_rsj, t_d_rsj = crisis_increment_test(rsj_exp, rsj_cri, nber_exp_vec, nber_cri_vec, NW_LAGS)
+    # ----------------------------------------------------------
+    # Table 2: Crisis interaction
+    # ----------------------------------------------------------
+    print("\n--- Collecting weekly slopes by state (M1) ---")
+    slopes = collect_weekly_slopes(panel, nber_map, SYS_SPECS)
 
-    m_res_exp, t_res_exp = nw_mean_t(res_exp, NW_LAGS)
-    m_res_cri, t_res_cri = nw_mean_t(res_cri, NW_LAGS)
-    d_res, t_d_res = crisis_increment_test(res_exp, res_cri, nber_exp_vec, nber_cri_vec, NW_LAGS)
+    # Console summary
+    print(f"\n{'Predictor':<38} {'Expansion':>12}  {'Increment':>12}  {'Recession':>12}")
+    print("-" * 80)
+    for spec in ["M1"]:
+        if spec not in slopes:
+            continue
+        print(f"  [{spec}]")
+        for pred in SYS_FOCAL.get(spec, []):
+            if pred not in slopes.get(spec, {}):
+                continue
+            d   = slopes[spec][pred]
+            exp = np.array(d["exp"], dtype=float)
+            cri = np.array(d["cri"], dtype=float)
+            m_e, t_e, _ = nw_mean(exp, NW_LAGS)
+            m_c, t_c, _ = nw_mean(cri, NW_LAGS)
+            inc, t_inc  = crisis_increment(d["exp"], d["cri"], NW_LAGS)
+            st = lambda t: "***" if abs(t)>2.576 else "**" if abs(t)>1.96 else \
+                           "*" if abs(t)>1.645 else "" if np.isfinite(t) else ""
+            print(f"  {PRED_LABEL.get(pred, pred):<36} "
+                  f"{m_e:>8.2f}{st(t_e):<3}  "
+                  f"{inc:>8.2f}{st(t_inc):<3}  "
+                  f"{m_c:>8.2f}{st(t_c):<3}")
 
-    print("  Joint regression components:")
-    print(f"    RSJ_sys normal={m_rsj_exp*10_000:.2f} (t={t_rsj_exp:.2f}), crisis={m_rsj_cri*10_000:.2f} (t={t_rsj_cri:.2f}), delta={d_rsj*10_000:.2f} (t={t_d_rsj:.2f})")
-    print(f"    RES_sys normal={m_res_exp*10_000:.2f} (t={t_res_exp:.2f}), crisis={m_res_cri*10_000:.2f} (t={t_res_cri:.2f}), delta={d_res*10_000:.2f} (t={t_d_res:.2f})\n")
-
-    results = [
-        {
-            "predictor": "rsj_sys_weekly",
-            "label": SYS_LABEL["rsj_sys_weekly"],
-            "normal_bps": m_rsj_exp * 10_000 if np.isfinite(m_rsj_exp) else np.nan,
-            "t_normal": t_rsj_exp,
-            "crisis_bps": m_rsj_cri * 10_000 if np.isfinite(m_rsj_cri) else np.nan,
-            "t_crisis": t_rsj_cri,
-            "delta_bps": d_rsj * 10_000 if np.isfinite(d_rsj) else np.nan,
-            "t_delta": t_d_rsj,
-        },
-        {
-            "predictor": "res_sys_p025",
-            "label": SYS_LABEL["res_sys_p025"],
-            "normal_bps": m_res_exp * 10_000 if np.isfinite(m_res_exp) else np.nan,
-            "t_normal": t_res_exp,
-            "crisis_bps": m_res_cri * 10_000 if np.isfinite(m_res_cri) else np.nan,
-            "t_crisis": t_res_cri,
-            "delta_bps": d_res * 10_000 if np.isfinite(d_res) else np.nan,
-            "t_delta": t_d_res,
-        },
-    ]
-
-    # LaTeX table
-    tex = build_latex(results)
+    tex_crisis = build_crisis_table(slopes, n_exp, n_cri)
     p = TABLE_DIR / "tab_crisis_state.tex"
-    p.write_text(tex, encoding="utf-8")
-    print(f"Saved: {p.name}")
+    p.write_text(tex_crisis, encoding="utf-8")
+    print(f"\nSaved: {p.name}")
 
-    # Rolling figure — use B7 intermediate (full M1 decomposition) if available
-    b7_path = INTER_DIR / "fm_coefs_B7.parquet"
-    if b7_path.exists():
-        df_b7 = pd.read_parquet(b7_path)
-        df_b7["week"] = pd.to_datetime(df_b7["week"])
-        needed = ["week", "rsj_sys_weekly", "res_sys_p025"]
-        if all(c in df_b7.columns for c in needed):
-            df_src = df_b7[needed].dropna()
-        else:
-            df_src = None
-    else:
-        df_src = None
-
-    if df_src is not None and len(df_src) > 52:
-        fig = build_rolling_figure(df_src)
+    # ----------------------------------------------------------
+    # Figure
+    # ----------------------------------------------------------
+    fig = build_rolling_figure()
+    if fig is not None:
         for ext in ("pdf", "png"):
-            fpath = FIG_DIR / f"fig_rolling_fm_decomp_idio.{ext}"
+            fpath = FIG_DIR / f"fig_rolling_fm_crisis.{ext}"
             fig.savefig(fpath, dpi=300, bbox_inches="tight")
         plt.close(fig)
-        print(f"Saved: fig_rolling_fm_decomp_idio.pdf/.png")
-    else:
-        print("Intermediate B7 coef series not found — run 02_fama_macbeth.py first.")
+        print(f"Saved: fig_rolling_fm_crisis.pdf/.png")
 
     print("\n=== Done ===")
 

@@ -14,7 +14,9 @@ Tests:
   H3: β_RSJ_idio=0 AND β_RES_idio=0       R=[[0,1,0,0],[0,0,0,1]], r=0, df=2
   H4: β_RSJ_sys=0  AND β_RES_sys=0        R=[[1,0,0,0],[0,0,1,0]], r=0, df=2
 
-Wald statistic: W = (Rβ̄ - r)' [R Var(β̄) R']^{-1} (Rβ̄ - r) ~ chi²(df) under H0
+Nonlinear Wald statistic: W = g(β̄)' [G Var(β̄) G']^{-1} g(β̄) ~ chi²(df) under H0
+  H1/H2 use g(β) = β_sys² - β_idio², G = [2β_sys, -2β_idio, ...]  (exact Jacobian)
+  H3/H4 are linear: g(β) = Rβ, G = R
 
 Var(β̄) = S_NW / T  where S_NW is the NW(6) long-run covariance matrix.
 
@@ -70,16 +72,22 @@ def nw_cov_mean(B: np.ndarray, lags: int) -> np.ndarray:
 
 
 # ============================================================
-# Wald test
+# Wald test (nonlinear form)
 # ============================================================
-def wald_test(mean_vec, cov_mat, R, r):
-    diff = R @ mean_vec - r
-    V    = R @ cov_mat @ R.T
+def wald_test(g_val: np.ndarray, G: np.ndarray, cov_mat: np.ndarray) -> dict:
+    """
+    Nonlinear Wald test.
+      g_val : q-vector  g(β̄)
+      G     : q × k Jacobian  ∂g/∂β̄'
+      cov_mat : k × k  Var(β̄)
+    W = g' [G V G']^{-1} g ~ chi²(q)
+    """
+    V = G @ cov_mat @ G.T
     try:
-        W = float(diff @ np.linalg.solve(V, diff))
+        W = float(g_val @ np.linalg.solve(V, g_val))
     except np.linalg.LinAlgError:
-        return dict(W=np.nan, df=len(r), p=np.nan)
-    df = len(r)
+        return dict(W=np.nan, df=len(g_val), p=np.nan)
+    df = len(g_val)
     p  = float(1 - scipy_stats.chi2.cdf(W, df))
     return dict(W=W, df=df, p=p)
 
@@ -87,68 +95,42 @@ def wald_test(mean_vec, cov_mat, R, r):
 # ============================================================
 # Build restriction matrices (fixed order: sys_RSJ, idio_RSJ, sys_RES, idio_RES)
 # ============================================================
-def make_restrictions():
+def make_restrictions(mean_b: np.ndarray):
     """
-    Signed restrictions (H1–H4).
+    Returns (label, g_val, G) tuples for the nonlinear Wald test.
     β index: 0=RSJ_sys, 1=RSJ_idio, 2=RES_sys, 3=RES_idio
-    """
-    # H1: β_RSJ_sys = β_RSJ_idio  ↔  β[0] - β[1] = 0
-    R1 = np.array([[1, -1, 0, 0]], dtype=float)
-    r1 = np.zeros(1)
 
-    # H2: β_RES_sys = β_RES_idio  ↔  β[2] - β[3] = 0
-    R2 = np.array([[0, 0, 1, -1]], dtype=float)
-    r2 = np.zeros(1)
+    H1: |β1| = |β2|  ↔  β1² - β2² = 0,  G1 = [2β1, -2β2, 0, 0]
+    H2: |β3| = |β4|  ↔  β3² - β4² = 0,  G2 = [0, 0, 2β3, -2β4]
+    H3/H4: linear zero restrictions; g = Rβ, G = R
+    """
+    b = mean_b
+
+    # H1: nonlinear
+    g1 = np.array([b[0]**2 - b[1]**2])
+    G1 = np.array([[2*b[0], -2*b[1], 0.0, 0.0]])
+
+    # H2: nonlinear
+    g2 = np.array([b[2]**2 - b[3]**2])
+    G2 = np.array([[0.0, 0.0, 2*b[2], -2*b[3]]])
 
     # H3: β_RSJ_idio = 0 AND β_RES_idio = 0
     R3 = np.array([[0, 1, 0, 0],
                    [0, 0, 0, 1]], dtype=float)
-    r3 = np.zeros(2)
+    g3 = R3 @ b
+    G3 = R3
 
     # H4: β_RSJ_sys = 0 AND β_RES_sys = 0
     R4 = np.array([[1, 0, 0, 0],
                    [0, 0, 1, 0]], dtype=float)
-    r4 = np.zeros(2)
+    g4 = R4 @ b
+    G4 = R4
 
     return [
-        (r"$H_1$: $\beta^\mathrm{RSJ}_\mathrm{sys} = \beta^\mathrm{RSJ}_\mathrm{idio}$",  R1, r1),
-        (r"$H_2$: $\beta^\mathrm{RES}_\mathrm{sys} = \beta^\mathrm{RES}_\mathrm{idio}$",  R2, r2),
-        (r"$H_3$: $\beta^\mathrm{RSJ}_\mathrm{idio} = \beta^\mathrm{RES}_\mathrm{idio} = 0$", R3, r3),
-        (r"$H_4$: $\beta^\mathrm{RSJ}_\mathrm{sys} = \beta^\mathrm{RES}_\mathrm{sys} = 0$",   R4, r4),
-    ]
-
-
-def make_abs_restrictions(mean_b: np.ndarray):
-    """
-    Absolute-value restrictions (H1_abs, H2_abs) via the delta method.
-
-    For |β_a| = |β_b|, linearise around the estimated mean:
-        |β_a| - |β_b| ≈ sign(β̄_a)·β_a - sign(β̄_b)·β_b
-
-    so R_abs = [sign(β̄_a), -sign(β̄_b), ...]
-
-    H3 and H4 test β = 0, which is the same as |β| = 0, so they are
-    unchanged and not duplicated here.
-
-    β index: 0=RSJ_sys, 1=RSJ_idio, 2=RES_sys, 3=RES_idio
-    """
-    s = np.sign(mean_b)   # signs of estimated means; shape (4,)
-    # If a mean is exactly zero, sign=0; treat as +1 to avoid a zero row
-    s = np.where(s == 0, 1.0, s)
-
-    # H1_abs: |β_RSJ_sys| = |β_RSJ_idio|  ↔  s[0]*β[0] - s[1]*β[1] = 0
-    R1a = np.array([[s[0], -s[1], 0, 0]], dtype=float)
-    r1a = np.zeros(1)
-
-    # H2_abs: |β_RES_sys| = |β_RES_idio|  ↔  s[2]*β[2] - s[3]*β[3] = 0
-    R2a = np.array([[0, 0, s[2], -s[3]]], dtype=float)
-    r2a = np.zeros(1)
-
-    return [
-        (r"$H_{1,\mathrm{abs}}$: $|\beta^\mathrm{RSJ}_\mathrm{sys}| = |\beta^\mathrm{RSJ}_\mathrm{idio}|$",
-         R1a, r1a),
-        (r"$H_{2,\mathrm{abs}}$: $|\beta^\mathrm{RES}_\mathrm{sys}| = |\beta^\mathrm{RES}_\mathrm{idio}|$",
-         R2a, r2a),
+        (r"$H_1$: $|\beta^\mathrm{RSJ}_\mathrm{sys}| = |\beta^\mathrm{RSJ}_\mathrm{idio}|$", g1, G1),
+        (r"$H_2$: $|\beta^\mathrm{RES}_\mathrm{sys}| = |\beta^\mathrm{RES}_\mathrm{idio}|$", g2, G2),
+        (r"$H_3$: $\beta^\mathrm{RSJ}_\mathrm{idio} = \beta^\mathrm{RES}_\mathrm{idio} = 0$", g3, G3),
+        (r"$H_4$: $\beta^\mathrm{RSJ}_\mathrm{sys} = \beta^\mathrm{RES}_\mathrm{sys} = 0$",   g4, G4),
     ]
 
 
@@ -179,10 +161,10 @@ def run_wald(spec_key):
     mean_b = B.mean(axis=0)
     V      = nw_cov_mean(B, NW_LAGS)
 
-    all_restrictions = make_restrictions() + make_abs_restrictions(mean_b)
+    all_restrictions = make_restrictions(mean_b)
     rows = []
-    for label, R, r in all_restrictions:
-        res = wald_test(mean_b, V, R, r)
+    for label, g_val, G in all_restrictions:
+        res = wald_test(g_val, G, V)
         rows.append({
             "hypothesis": label,
             "df": res["df"],
@@ -229,15 +211,8 @@ def build_latex(df_m1, df_m2):
     lines += [r"Hypothesis & df & $\chi^2$ (M1) & $p$-value & $\chi^2$ (M2) & $p$-value \\"]
     lines += [r"\midrule"]
 
-    # Signed tests (H1–H4) then absolute-value tests (H1_abs, H2_abs)
-    ABS_MARKER = r"$H_{1,\mathrm{abs}}$"
-    first_abs_seen = False
     for _, row in merged.iterrows():
         hyp = row["hypothesis"]
-        if not first_abs_seen and ABS_MARKER in hyp:
-            lines += [r"\midrule",
-                      r"\multicolumn{6}{l}{\textit{Absolute-value tests (delta method)}} \\"]
-            first_abs_seen = True
         df  = int(row["df"]) if np.isfinite(row["df"]) else ""
         w1  = _fmt_w(row.get("W_M1", np.nan), row.get("p_M1", np.nan))
         p1  = _fmt_p(row.get("p_M1", np.nan))
@@ -251,13 +226,14 @@ def build_latex(df_m1, df_m2):
               r" [\beta^\mathrm{RSJ}_\mathrm{sys},\, \beta^\mathrm{RSJ}_\mathrm{idio},"
               r"\, \beta^\mathrm{RES}_\mathrm{sys},\, \beta^\mathrm{RES}_\mathrm{idio}]$."
               r" M1 = intraday decomposition; M2 = rolling 52-week regression."
-              r" Wald statistic $W = (\mathbf{R}\bar{\boldsymbol{\beta}} - \mathbf{r})'$"
-              r" $[\mathbf{R}\widehat{\mathrm{Var}}(\bar{\boldsymbol{\beta}})\mathbf{R}']^{-1}$"
-              r" $(\mathbf{R}\bar{\boldsymbol{\beta}} - \mathbf{r}) \sim \chi^2(df)$ under $H_0$."
+              r" Nonlinear Wald statistic $W = g(\bar{\boldsymbol{\beta}})'$"
+              r" $[G\,\widehat{\mathrm{Var}}(\bar{\boldsymbol{\beta}})\,G']^{-1}$"
+              r" $g(\bar{\boldsymbol{\beta}}) \sim \chi^2(df)$ under $H_0$,"
+              r" where $G = \partial g / \partial \bar{\boldsymbol{\beta}}'$ is the Jacobian."
               r" $\widehat{\mathrm{Var}}(\bar{\boldsymbol{\beta}})$ uses NW(6) Bartlett kernel."
-              r" Absolute-value tests ($H_{1,\mathrm{abs}}$, $H_{2,\mathrm{abs}}$) apply the"
-              r" delta-method linearisation $|\beta| \approx \mathrm{sign}(\bar{\beta})\cdot\beta$"
-              r" and test $|\beta_\mathrm{sys}| = |\beta_\mathrm{idio}|$ regardless of sign."
+              r" $H_1$ and $H_2$ use $g(\boldsymbol{\beta}) = \beta_\mathrm{sys}^2 - \beta_\mathrm{idio}^2$"
+              r" with Jacobian $G = [2\beta_\mathrm{sys},\, {-2}\beta_\mathrm{idio},\, \ldots]$;"
+              r" $H_3$ and $H_4$ are linear zero restrictions."
               r" $^{*}p<0.10$, $^{**}p<0.05$, $^{***}p<0.01$.",
               r"\end{tablenotes}",
               r"\end{threeparttable}", r"\end{table}"]
