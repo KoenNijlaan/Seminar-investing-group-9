@@ -1,23 +1,11 @@
 """
-Build Weekly Market RSJ Series
-
-Purpose:
-  Compute weekly market-level RSJ using the market return series.
-
-Inputs:
-  - Weekly market return input data.
-
-Outputs:
-  - Weekly market RSJ file in data_intermediate/market_weekly_rsj.
-
-Main Steps:
-  - Compute RSJ from positive and negative return variation.
-  - Aggregate to week level.
-  - Save clean market RSJ output.
+Constructs weekly market-level RSJ series from the market return inputs. These market RSJ variables are used as the reference market component in the RSJ decomposition steps.
 """
+
 from pathlib import Path
 import pandas as pd
 import numpy as np
+
 
 def compute_rsj(r):
     r = np.asarray(r, dtype=float)
@@ -32,6 +20,9 @@ def compute_rsj(r):
 
     return (rv_pos - rv_neg) / rv
 
+                                                           
+       
+                                                           
 input_dir = Path("data_intermediate/converted_parquet_etf")
 output_dir = Path("data_intermediate/market_weekly_rsj")
 output_dir.mkdir(parents=True, exist_ok=True)
@@ -52,10 +43,12 @@ for i, file_path in enumerate(files, start=1):
 
     df = pd.read_parquet(file_path)
 
+                   
     df = df[df["sym_root"] == "SPY"].copy()
     if df.empty:
         continue
 
+                                                 
     df = df[df["n_obs"] >= 80].copy()
     if df.empty:
         continue
@@ -70,6 +63,7 @@ if not parts:
 
 spy_daily = pd.concat(parts, ignore_index=True)
 
+                                              
 spy_daily["week"] = spy_daily["date"].dt.to_period("W-TUE").dt.end_time.dt.normalize()
 
 spy_weekly = (
@@ -82,6 +76,7 @@ spy_weekly = (
     )
 )
 
+                                       
 spy_weekly = spy_weekly[spy_weekly["n_days"] >= 3].copy()
 
 print("\nPreview:")
