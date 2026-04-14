@@ -1,3 +1,20 @@
+"""
+Main Summary Statistics Table
+
+Purpose:
+  Compute and format the main summary-statistics table from the final panel.
+
+Inputs:
+  - Final panel data and results utility helpers.
+
+Outputs:
+  - Summary statistics table in the results folder.
+
+Main Steps:
+  - Compute selected descriptive statistics.
+  - Format values for output.
+  - Write final table file.
+"""
 from __future__ import annotations
 
 import pandas as pd
@@ -21,7 +38,6 @@ SORT_VARIABLES = [
     "res_idio_p025",
 ]
 
-
 def load_ff3_weekly(ff_file) -> pd.DataFrame:
     ff = pd.read_parquet(ff_file)
     ff.columns = ff.columns.str.strip().str.lower()
@@ -33,7 +49,6 @@ def load_ff3_weekly(ff_file) -> pd.DataFrame:
     )
     ff_w["week"] = pd.to_datetime(ff_w["week"]).dt.normalize()
     return ff_w
-
 
 def compute_common_weeks(panel: pd.DataFrame, sort_cols: list[str], ff_idx: pd.DataFrame) -> list:
     base = panel[
@@ -50,7 +65,6 @@ def compute_common_weeks(panel: pd.DataFrame, sort_cols: list[str], ff_idx: pd.D
         common &= weeks_ok
 
     return sorted(common)
-
 
 def main() -> None:
     ensure_output_dirs()
@@ -114,7 +128,6 @@ def main() -> None:
     out = pd.DataFrame(rows)
     write_csv_and_tex(out, "table_summary_stats", float_fmt="%.6f")
     print("Saved summary statistics table.")
-
 
 if __name__ == "__main__":
     main()

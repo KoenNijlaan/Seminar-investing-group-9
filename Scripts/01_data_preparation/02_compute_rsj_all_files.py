@@ -1,3 +1,20 @@
+"""
+Compute Daily RSJ Measures
+
+Purpose:
+  Compute daily RSJ moments from converted intraday stock files.
+
+Inputs:
+  - Converted intraday stock files.
+
+Outputs:
+  - Daily RSJ result files for weekly aggregation.
+
+Main Steps:
+  - Process files day by day.
+  - Apply RSJ calculations at stock-day level.
+  - Store daily outputs in intermediate data.
+"""
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -25,7 +42,6 @@ for i, file_path in enumerate(files, start=1):
 
     df = pd.read_parquet(file_path)
 
-    # Keep only stock-days with sufficient intraday observations
     df = df[df["n_obs"] >= 80].copy()
 
     df["rsj"] = df["returns_5m"].apply(compute_rsj)

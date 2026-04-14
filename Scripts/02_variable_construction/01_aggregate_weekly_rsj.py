@@ -1,9 +1,23 @@
+"""
+Aggregate RSJ To Weekly Frequency
+
+Purpose:
+  Aggregate daily RSJ measures into weekly stock-level RSJ variables.
+
+Inputs:
+  - Daily RSJ output files.
+
+Outputs:
+  - Weekly RSJ dataset in data_intermediate.
+
+Main Steps:
+  - Load all daily RSJ files.
+  - Group by stock-week.
+  - Compute weekly aggregates and save output.
+"""
 from pathlib import Path
 import pandas as pd
 
-# -----------------------------
-# Paths
-# -----------------------------
 input_dir = Path("data_intermediate/rsj_daily")
 output_dir = Path("data_intermediate/rsj_weekly")
 output_dir.mkdir(parents=True, exist_ok=True)
@@ -20,13 +34,10 @@ for i, file_path in enumerate(files, start=1):
 
     df = pd.read_parquet(file_path)
 
-    # Convert date to datetime
     df["date"] = pd.to_datetime(df["date"])
 
-    # Week ending Tuesday (includes Tuesday close)
     df["week"] = df["date"].dt.to_period("W-TUE").dt.end_time.dt.normalize()
 
-    # Aggregate within this file
     weekly_part = (
         df.groupby(["permno", "week"], as_index=False)
           .agg(

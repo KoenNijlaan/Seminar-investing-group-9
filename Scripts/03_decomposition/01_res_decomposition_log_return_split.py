@@ -1,11 +1,25 @@
+"""
+RES Decomposition From Log Return Splits
+
+Purpose:
+  Decompose RES into total, systematic, and idiosyncratic components.
+
+Inputs:
+  - Log-return split intermediates and market series.
+
+Outputs:
+  - RES decomposition outputs for panel construction.
+
+Main Steps:
+  - Load split components.
+  - Run decomposition formulas.
+  - Save total/systematic/idiosyncratic outputs.
+"""
 from pathlib import Path
 from functools import lru_cache
 import numpy as np
 import pandas as pd
 
-# ============================================================
-# Settings
-# ============================================================
 ROOT = Path(__file__).resolve().parents[2]
 
 INPUT_DIR = ROOT / "data_intermediate" / "converted_parquet"
@@ -17,23 +31,16 @@ EXPECTED_INTERVALS = 78
 LOOKBACK_WEEKS = 4
 MIN_TRANSACTIONS_PER_DAY = 80
 MIN_VALID_DAYS_PER_WEEK = 3
-MIN_TRAIN_OBS = 78  # minimum number of stacked 5-minute obs for regression
+MIN_TRAIN_OBS = 78
 
-# Set to an integer for quick testing, e.g. 10
 MAX_WEEKS = None
 
-
-# ============================================================
-# Helpers
-# ============================================================
 def clean_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
-
 def to_1d_float_array(x):
-    """Convert list-like to writable float numpy array."""
     if x is None:
         return None
     if isinstance(x, float) and np.isnan(x):
@@ -45,15 +52,7 @@ def to_1d_float_array(x):
     arr[~np.isfinite(arr)] = np.nan
     return arr
 
-
 def simple_to_log_array(x, expected_len=None):
-    """
-    Convert simple returns to log returns.
-    Reject the full array if:
-    - wrong length
-    - any non-finite values
-    - any return <= -1
-    """
     arr = to_1d_float_array(x)
     if arr is None:
         return None
@@ -61,22 +60,15 @@ def simple_to_log_array(x, expected_len=None):
     if expected_len is not None and len(arr) != expected_len:
         return None
 
-    # reject if any element is missing / non-finite
     if np.any(~np.isfinite(arr)):
         return None
 
-    # reject impossible simple returns
     if np.any(arr <= -1):
         return None
 
     return np.log1p(arr)
 
-
 def fit_market_model(stock_arrays, spy_arrays):
-    """
-    Fit pooled OLS over stacked 5-minute observations:
-        stock_log = alpha + beta * spy_log + epsilon
-    """
     y_list = []
     x_list = []
 
@@ -118,22 +110,7 @@ def fit_market_model(stock_arrays, spy_arrays):
         "n_train_obs": int(len(y)),
     }
 
-
-# ============================================================
-# SPY loader
-# ============================================================
 def load_spy_data(spy_file: Path) -> pd.DataFrame:
-    """
-    Load SPY long-format intraday file with columns:
-      - date
-      - interval
-      - market_ret
-
-    Returns:
-      DataFrame with columns:
-      - date
-      - spy_log_5m  (numpy array of length 78)
-    """
     print(f"Loading SPY file from: {spy_file.resolve()}")
 
     if not spy_file.exists():
@@ -178,18 +155,7 @@ def load_spy_data(spy_file: Path) -> pd.DataFrame:
     print(f"Loaded SPY dates: {len(spy_daily)}")
     return spy_daily[["date", "spy_log_5m"]]
 
-
-# ============================================================
-# Stock file discovery
-# ============================================================
 def discover_stock_files(input_dir: Path):
-    """
-    Returns a DataFrame with:
-      - date
-      - path
-      - week
-      - week_end
-    """
     files = sorted(input_dir.glob("*.parquet"))
     if not files:
         raise FileNotFoundError(f"No parquet files found in {input_dir}")
@@ -213,21 +179,8 @@ def discover_stock_files(input_dir: Path):
 
     return pd.DataFrame(records).sort_values("date").reset_index(drop=True)
 
-
-# ============================================================
-# Cached daily stock loader
-# ============================================================
 @lru_cache(maxsize=40)
 def load_stock_day_cached(path_str: str) -> pd.DataFrame:
-    """
-    Load one DAILY stock file.
-    Expected columns include:
-      - date
-      - permno
-      - sym_root
-      - n_obs
-      - returns_5m
-    """
     path = Path(path_str)
     df = pd.read_parquet(path)
     df = clean_columns(df)
@@ -252,30 +205,14 @@ def load_stock_day_cached(path_str: str) -> pd.DataFrame:
 
     return df
 
-
-# ============================================================
-# Weekly processing
-# ============================================================
 def process_one_week(
     current_week,
     current_week_end,
     file_map: pd.DataFrame,
     spy_df: pd.DataFrame,
 ):
-    """
-    For one week:
-    - load current week daily stock files
-    - load previous 4 weeks of stock files
-    - merge SPY
-    - determine valid current-week days
-    - require at least 3 valid current-week days per permno
-    - estimate alpha/beta from previous 4 weeks
-    - save split daily files for current week
-    """
     week_start = current_week.start_time.normalize()
 
-    # Dates needed:
-    # previous 4 weeks for training, current week for output
     load_start = week_start - pd.Timedelta(weeks=LOOKBACK_WEEKS)
     load_end = current_week_end
 
@@ -287,7 +224,6 @@ def process_one_week(
         print(f"Week ending {current_week_end.date()}: no files found.")
         return
 
-    # Load all required daily files and stack
     daily_frames = []
     for _, row in week_files.iterrows():
         try:
@@ -302,27 +238,22 @@ def process_one_week(
 
     df = pd.concat(daily_frames, ignore_index=True)
 
-    # Merge SPY
     df = df.merge(spy_df, on="date", how="left")
 
-    # Build week fields
     df["week"] = df["date"].dt.to_period("W-TUE")
     df["week_end"] = df["week"].dt.end_time.dt.normalize()
 
-    # Valid day = enough trades + both return arrays present
     df["is_valid_day"] = (
         (df["n_obs"] >= MIN_TRANSACTIONS_PER_DAY)
         & df["stock_log_5m"].notna()
         & df["spy_log_5m"].notna()
     )
 
-    # Current week valid rows
     current_valid = df[(df["week"] == current_week) & (df["is_valid_day"])].copy()
     if current_valid.empty:
         print(f"Week ending {current_week_end.date()}: no valid current-week rows.")
         return
 
-    # Require at least 3 valid days in current week per permno
     valid_counts = current_valid.groupby("permno").size()
     eligible_permnos = set(valid_counts[valid_counts >= MIN_VALID_DAYS_PER_WEEK].index)
 
@@ -332,7 +263,6 @@ def process_one_week(
 
     current_valid = current_valid[current_valid["permno"].isin(eligible_permnos)].copy()
 
-    # Training rows: previous 4 weeks only, valid days only
     train_df = df[
         (df["date"] >= load_start) &
         (df["date"] < week_start) &
@@ -340,7 +270,6 @@ def process_one_week(
         (df["permno"].isin(eligible_permnos))
     ].copy()
 
-    # Group once for speed
     current_groups = {permno: grp.sort_values("date") for permno, grp in current_valid.groupby("permno")}
     train_groups = {permno: grp.sort_values("date") for permno, grp in train_df.groupby("permno")}
 
@@ -400,7 +329,6 @@ def process_one_week(
 
     out_df = pd.DataFrame(out_rows).sort_values(["date", "permno"])
 
-    # Save one parquet per date, matching your daily-file structure
     for out_date, day_df in out_df.groupby("date"):
         out_path = OUTPUT_DIR / f"{out_date.strftime('%Y-%m-%d')}.parquet"
         day_df.to_parquet(out_path, index=False)
@@ -410,10 +338,6 @@ def process_one_week(
         f"{len(out_df)} rows across {out_df['date'].nunique()} daily files."
     )
 
-
-# ============================================================
-# Main
-# ============================================================
 def main():
     print("Project root:", ROOT)
     print("Input dir:", INPUT_DIR)
@@ -454,7 +378,6 @@ def main():
             print(f"Error in week ending {current_week_end.date()}: {e}")
 
     print("\nDone.")
-
 
 if __name__ == "__main__":
     main()

@@ -1,26 +1,20 @@
 """
-Illiquidity mechanism check following eq. (mech) in the paper.
+Illiquidity Analysis
 
-Model:
-    C_{i,w} = alpha_w + delta_w * ILLIQ_{i,w} + eta_w' * X_{i,w} + nu_{i,w}
+Purpose:
+  Estimate how signal effects vary with illiquidity using interaction-style models.
 
-where C_{i,w} in {RSJ^idio (M1), RES^idio} and
-    X_{i,w} = (ME, BM, MOM, REV, IVOL)    [ILLIQ is the focal regressor, not a control]
+Inputs:
+  - Final panel with signal and illiquidity variables.
 
-Specifications per dependent variable:
-  (1) Univariate:  C ~ ILLIQ
-  (2) Controlled:  C ~ ILLIQ + X
+Outputs:
+  - Illiquidity analysis tables and intermediate summaries.
 
-Table layout (matches main FM tables):
-  Rows = regressors (ILLIQ focal, then controls)
-  Columns = (1) RSJ_idio Univ. | (2) RSJ_idio Ctrl. | (3) RES_idio Univ. | (4) RES_idio Ctrl.
-  t-statistics in parentheses below each coefficient
-  Footer: N weeks, Avg adj R²
-
-Output:
-    data_final/results/tables/tab_illiquidity.tex
+Main Steps:
+  - Build interaction terms.
+  - Run weekly specifications.
+  - Summarize and export outputs.
 """
-
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -36,8 +30,6 @@ WINSOR_LOW  = 0.01
 WINSOR_HIGH = 0.99
 MIN_STOCKS  = 30
 
-# Controls as defined in eq. (controls_mech): X = (ME, BM, MOM, REV, IVOL)
-# ILLIQ is excluded because it is the focal regressor
 CONTROLS = ["me", "bm", "mom", "rev", "ivol", "rvol", "rsk", "rkt", "n_obs_daily"]
 
 PRED_LABEL = {
@@ -53,26 +45,21 @@ PRED_LABEL = {
     "n_obs_daily": r"NTRANS",
 }
 
-# Only M1 idiosyncratic decomposition
 IDIO_SIGNALS = [
     ("rsj_idio_weekly", r"RSJ$^{\mathrm{idio}}$ (M1)"),
     ("res_idio_p025",   r"RES$^{\mathrm{idio}}$"),
 ]
 
-# Column definitions: (signal_col, spec_label, regressors)
 SPECS = []
 for sig_col, sig_lbl in IDIO_SIGNALS:
     SPECS.append((sig_col, f"{sig_lbl} (Univ.)", ["illiq"]))
     SPECS.append((sig_col, f"{sig_lbl} (Ctrl.)", ["illiq"] + CONTROLS))
 
-
 def winsorize_cs(s: pd.Series) -> pd.Series:
     lo, hi = s.quantile(WINSOR_LOW), s.quantile(WINSOR_HIGH)
     return s.clip(lo, hi)
 
-
 def nw_mean(arr: np.ndarray, lags: int) -> tuple[float, float]:
-    """NW HAC mean. Returns (mean, t-stat)."""
     y = np.asarray(arr, dtype=float)
     y = y[np.isfinite(y)]
     if len(y) < 10:
@@ -82,10 +69,8 @@ def nw_mean(arr: np.ndarray, lags: int) -> tuple[float, float]:
     )
     return float(res.params[0]), float(res.tvalues[0])
 
-
 def run_ols_week(df_week: pd.DataFrame, dep: str, indep: list[str],
                  min_n: int = MIN_STOCKS) -> dict | None:
-    """Single-week OLS. Returns {pred: coef, ..., rsq_adj} or None."""
     sub = df_week[[dep] + indep].dropna()
     if len(sub) < min_n:
         return None
@@ -105,7 +90,6 @@ def run_ols_week(df_week: pd.DataFrame, dep: str, indep: list[str],
         out[p] = float(res.params[i + 1])
     return out
 
-
 def _stars(t: float) -> str:
     if not np.isfinite(t):
         return ""
@@ -115,7 +99,6 @@ def _stars(t: float) -> str:
     if a > 1.645: return "*"
     return ""
 
-
 def _fmt(val: float, t: float = None, dec: int = 4) -> str:
     if val is None or not np.isfinite(float(val)):
         return ""
@@ -124,22 +107,12 @@ def _fmt(val: float, t: float = None, dec: int = 4) -> str:
         s += _stars(t)
     return s
 
-
 def _fmt_pct(val: float) -> str:
     if val is None or not np.isfinite(float(val)):
         return ""
     return f"{float(val) * 100:.2f}\\%"
 
-
 def run_all_specs(panel: pd.DataFrame) -> dict:
-    """
-    For each spec (signal x univariate/controlled), collect weekly coefficient
-    series and compute NW means + avg adj R².
-
-    Returns dict keyed by spec index:
-      {i: {"label": str, "regressors": [...],
-           "coefs": {pred: (mean, t)}, "rsq": float, "n_weeks": int}}
-    """
     weeks = sorted(panel["week"].unique())
     results = {}
 
@@ -181,19 +154,11 @@ def run_all_specs(panel: pd.DataFrame) -> dict:
 
     return results
 
-
 def build_latex(results: dict) -> str:
-    """
-    FM-style table:
-      Rows  = regressors (ILLIQ, then controls)
-      Cols  = one per spec
-      Footer = N weeks, Avg adj R²
-    """
     col_keys = sorted(results.keys())
     n_cols   = len(col_keys)
     col_spec = "l" + "c" * n_cols
 
-    # All regressors that appear anywhere, in display order
     row_vars = ["illiq"] + CONTROLS
 
     def _cell(spec_idx, pred):
@@ -203,9 +168,8 @@ def build_latex(results: dict) -> str:
         m, t = spec["coefs"][pred]
         return _fmt(m, t), (f"({t:.2f})" if np.isfinite(t) else "")
 
-    # Column headers: split label at " (" for two-line header
     def _col_header(lbl):
-        # e.g. "RSJ^idio (M1) (Univ.)" -> split before last " ("
+
         if " (Univ.)" in lbl:
             base = lbl.replace(" (Univ.)", "")
             return f"{base} \\\\ & (Univ.)"
@@ -221,12 +185,11 @@ def build_latex(results: dict) -> str:
     lines += [rf"\begin{{tabular}}{{{col_spec}}}"]
     lines += [r"\toprule"]
 
-    # Header: group RSJ_idio and RES_idio with cmidrules
     rsj_cols = [k for k in col_keys if "RSJ" in results[k]["label"]]
     res_cols = [k for k in col_keys if "RES" in results[k]["label"]]
 
     def col_pos(k):
-        return col_keys.index(k) + 2  # +2 because first col is row label
+        return col_keys.index(k) + 2
 
     if rsj_cols and res_cols:
         rsj_start, rsj_end = col_pos(rsj_cols[0]),  col_pos(rsj_cols[-1])
@@ -240,7 +203,6 @@ def build_latex(results: dict) -> str:
             f"\\cmidrule(lr){{{res_start}-{res_end}}}",
         ]
 
-    # Sub-headers: Univ. / Ctrl.
     sub_hdrs = []
     for k in col_keys:
         lbl = results[k]["label"]
@@ -248,9 +210,8 @@ def build_latex(results: dict) -> str:
     lines += ["  & " + " & ".join(sub_hdrs) + r" \\"]
     lines += [r"\midrule"]
 
-    # Coefficient rows
     for pred in row_vars:
-        # Check if this predictor appears in any spec
+
         if not any(pred in results[k]["regressors"] for k in col_keys):
             continue
         coef_cells = []
@@ -294,14 +255,12 @@ def build_latex(results: dict) -> str:
     ]
     return "\n".join(lines)
 
-
 def main() -> None:
     print("=== Illiquidity Mechanism Analysis ===\n")
 
     panel = pd.read_parquet(PANEL_FILE)
     panel["week"] = pd.to_datetime(panel["week"]).dt.normalize()
 
-    # Average number of 5-minute observations per trading day
     panel["n_obs_daily"] = panel["n_obs_total"] / panel["n_days"]
 
     for c in ["illiq"] + CONTROLS:
@@ -315,7 +274,6 @@ def main() -> None:
     out.write_text(tex, encoding="utf-8")
     print(f"\nSaved: {out.name}")
     print("\n=== Done ===")
-
 
 if __name__ == "__main__":
     main()

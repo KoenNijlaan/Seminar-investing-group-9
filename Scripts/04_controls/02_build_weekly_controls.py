@@ -1,41 +1,26 @@
+"""
+Build Weekly Controls
+
+Purpose:
+  Construct weekly control variables used in Fama-MacBeth and related analyses.
+
+Inputs:
+  - WRDS extracts and intermediate return/decomposition files.
+
+Outputs:
+  - Control datasets in data_intermediate/controls.
+
+Main Steps:
+  - Compute controls such as size, value, momentum, and liquidity metrics.
+  - Align timing and stock-week keys.
+  - Save weekly control outputs.
+"""
 from pathlib import Path
 import gc
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-# =========================================================
-# PURPOSE
-# =========================================================
-# Build weekly control variables aligned to the RSJ weekly sample.
-#
-# Controls:
-#   - ME      : log market equity
-#   - BM      : book-to-market
-#   - MOM     : momentum, day t-252 to t-21
-#   - REV     : lagged 1-week return
-#   - IVOL    : idiosyncratic volatility from daily FF3 residuals over t-20:t
-#   - ILLIQ   : log Amihud illiquidity over t-4:t
-#
-# INPUTS
-#   data_intermediate/rsj_weekly/rsj_weekly.parquet
-#   data_raw/wrds/crsp_daily_rsj_sample_1992_2024.parquet
-#   data_raw/wrds/crsp_delist_rsj_sample_1992_2024.parquet
-#   data_raw/wrds/ff_daily_factors_1992_2024.parquet
-#   data_raw/wrds/comp_funda_1991_2024.parquet
-#   data_raw/wrds/ccm_linktable.parquet
-#
-# OUTPUT
-#   data_intermediate/controls/weekly_controls.parquet
-#
-# INTERMEDIATE OUTPUTS
-#   data_intermediate/controls/_daily_controls_base.parquet
-#   data_intermediate/controls/_daily_ivol.parquet
-# =========================================================
-
-# ---------------------------------------------------------
-# Paths
-# ---------------------------------------------------------
 rsj_path = Path("data_intermediate/rsj_weekly/rsj_weekly.parquet")
 crsp_path = Path("data_raw/wrds/crsp_daily_rsj_sample_1992_2024.parquet")
 delist_path = Path("data_raw/wrds/crsp_delist_rsj_sample_1992_2024.parquet")
@@ -50,18 +35,12 @@ daily_base_path = output_dir / "_daily_controls_base.parquet"
 daily_ivol_path = output_dir / "_daily_ivol.parquet"
 output_path = output_dir / "weekly_controls.parquet"
 
-# ---------------------------------------------------------
-# Settings
-# ---------------------------------------------------------
 mom_skip_days = 21
 mom_lookback_days = 252
 illiq_window = 5
 ivol_window = 21
 ivol_progress_every = 500
 
-# ---------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------
 def parse_date_col(s: pd.Series) -> pd.Series:
     if pd.api.types.is_datetime64_any_dtype(s):
         return pd.to_datetime(s)
@@ -78,10 +57,6 @@ def safe_to_numeric(df: pd.DataFrame, cols):
     return df
 
 def rolling_cumret_ex_skip(ret: pd.Series, lookback: int, skip: int) -> pd.Series:
-    """
-    Momentum at date t:
-    compound gross return from t-lookback through t-skip.
-    """
     vals = pd.to_numeric(ret, errors="coerce").to_numpy(dtype=float)
     out = np.full(len(vals), np.nan)
 
@@ -102,9 +77,6 @@ def rolling_cumret_ex_skip(ret: pd.Series, lookback: int, skip: int) -> pd.Serie
     return pd.Series(out, index=ret.index, dtype=float)
 
 def compute_ivol_array(ret_adj, rf, mktrf, smb, hml, window=21):
-    """
-    Compute daily IVOL as rolling std of residuals from FF3 regression.
-    """
     y_all = ret_adj - rf
     n = len(y_all)
     out = np.full(n, np.nan)
@@ -130,9 +102,6 @@ def compute_ivol_array(ret_adj, rf, mktrf, smb, hml, window=21):
 
     return out
 
-# ---------------------------------------------------------
-# 1) Load RSJ keys
-# ---------------------------------------------------------
 print("Loading RSJ weekly sample...")
 rsj = pd.read_parquet(rsj_path)
 rsj["permno"] = pd.to_numeric(rsj["permno"], errors="coerce").astype("Int64")
@@ -148,9 +117,6 @@ print(f"RSJ unique weeks   : {rsj_keys['week'].nunique():,}")
 del rsj
 gc.collect()
 
-# ---------------------------------------------------------
-# 2) Build daily base controls from CRSP
-# ---------------------------------------------------------
 if daily_base_path.exists():
     print(f"\nSkipping section 2: {daily_base_path.name} already exists.")
 else:
@@ -159,7 +125,7 @@ else:
         "permno", "date", "ret", "retx", "prc", "vol", "shrout",
         "me", "dollar_vol", "shrcd", "exchcd"
     ]
-    # Read only the needed columns directly — avoids loading full file then copying
+
     available_cols = pq.read_schema(crsp_path).names
     existing_cols = [c for c in needed_cols if c in available_cols]
     crsp = pd.read_parquet(crsp_path, columns=existing_cols)
@@ -184,7 +150,6 @@ else:
     del delist
     gc.collect()
 
-    # Adjusted return
     crsp["ret"] = pd.to_numeric(crsp["ret"], errors="coerce").astype(float)
     crsp["dlret"] = pd.to_numeric(crsp["dlret"], errors="coerce").astype(float)
 
@@ -204,7 +169,6 @@ else:
 
     print("Constructing daily ME, ILLIQ, MOM...")
 
-    # Market equity
     if "me" not in crsp.columns or crsp["me"].isna().all():
         crsp["me"] = crsp["prc"].abs() * crsp["shrout"]
 
@@ -213,7 +177,6 @@ else:
     mask_me = crsp["me"].notna() & (crsp["me"] > 0)
     crsp.loc[mask_me, "log_me_daily"] = np.log(crsp.loc[mask_me, "me"])
 
-    # Dollar volume
     if "dollar_vol" not in crsp.columns or crsp["dollar_vol"].isna().all():
         crsp["dollar_vol"] = crsp["prc"].abs() * crsp["vol"]
 
@@ -226,7 +189,6 @@ else:
         np.abs(crsp.loc[mask_illiq, "ret_adj"]) / crsp.loc[mask_illiq, "dollar_vol"]
     )
 
-    # Rolling illiquidity
     crsp["illiq_daily"] = (
         crsp.groupby("permno")["amihud_daily"]
             .rolling(illiq_window, min_periods=illiq_window)
@@ -239,7 +201,6 @@ else:
     mask_log_illiq = crsp["illiq_daily"].notna() & (crsp["illiq_daily"] > 0)
     crsp.loc[mask_log_illiq, "log_illiq_daily"] = np.log(crsp.loc[mask_log_illiq, "illiq_daily"])
 
-    # Momentum
     print("Computing daily momentum...")
     mom_parts = []
     n_stocks = crsp["permno"].nunique()
@@ -264,9 +225,6 @@ else:
     del mom_daily
     gc.collect()
 
-    # Keep only what is needed before IVOL
-    # shrcd and exchcd: kept for end-of-week stock info in controls output
-    # prc: kept for end-of-week price (for price filter in panel build)
     crsp = crsp[[
         "permno",
         "date",
@@ -283,9 +241,6 @@ else:
     crsp.to_parquet(daily_base_path, index=False)
     print(f"Saved daily base controls: {daily_base_path}")
 
-# ---------------------------------------------------------
-# 3) Compute daily IVOL separately
-# ---------------------------------------------------------
 if daily_ivol_path.exists():
     print(f"\nSkipping section 3: {daily_ivol_path.name} already exists.")
 else:
@@ -343,14 +298,8 @@ else:
     del ivol_parts
     gc.collect()
 
-# ---------------------------------------------------------
-# 4) Aggregate to weekly — load each subset from disk separately
-#    to avoid merging large frames (which fragments pandas blocks
-#    and causes consolidation OOM errors).
-# ---------------------------------------------------------
 print("\nAggregating daily controls to weekly...")
 
-# 4a) Weekly compounded return — only needs ret_adj
 print("  Computing weekly returns...")
 _ret_cols = ["permno", "date", "ret_adj"]
 _ret = pd.read_parquet(daily_base_path, columns=_ret_cols)
@@ -368,7 +317,6 @@ weekly_ret = (
 del _ret
 gc.collect()
 
-# 4b) End-of-week snapshot — load base cols + ivol separately, then join
 print("  Building end-of-week snapshot...")
 _snap_base_cols = ["permno", "date", "log_me_daily", "mom_daily", "log_illiq_daily", "me"]
 _avail = pq.read_schema(daily_base_path).names
@@ -381,8 +329,6 @@ _snap["permno"] = pd.to_numeric(_snap["permno"], errors="coerce").astype("Int64"
 _snap["date"] = parse_date_col(_snap["date"])
 _snap["week"] = make_week_from_date(_snap["date"])
 
-# Reduce to end-of-week rows BEFORE merging ivol — keeps merge small (~1.6M vs 37M rows)
-# daily_base_path is sorted by (permno, date), so last row per (permno, week) = end-of-week
 _snap = (
     _snap
     .drop_duplicates(subset=["permno", "week"], keep="last")
@@ -393,7 +339,6 @@ _ivol = pd.read_parquet(daily_ivol_path, columns=["permno", "date", "ivol_daily"
 _ivol["permno"] = pd.to_numeric(_ivol["permno"], errors="coerce").astype("Int64")
 _ivol["date"] = parse_date_col(_ivol["date"])
 
-# Now merge is small_frame × small_frame — no OOM
 daily_last = _snap.merge(_ivol, on=["permno", "date"], how="left")
 del _snap, _ivol
 gc.collect()
@@ -424,9 +369,6 @@ weekly_controls["rev"] = weekly_controls.groupby("permno")["ret_weekly"].shift(1
 del weekly_ret
 gc.collect()
 
-# ---------------------------------------------------------
-# 5) Build BM from Compustat + CCM + December ME
-# ---------------------------------------------------------
 print("Constructing BM from Compustat and CCM...")
 
 comp = pd.read_parquet(comp_path)
@@ -462,7 +404,6 @@ bm_base = bm_base[
     (bm_base["datadate"] <= bm_base["linkenddt"])
 ].copy()
 
-# December ME from weekly_controls me_raw is not enough; use daily base / raw daily file
 crsp_for_dec = pd.read_parquet(daily_base_path)
 crsp_for_dec["date"] = parse_date_col(crsp_for_dec["date"])
 crsp_for_dec["permno"] = pd.to_numeric(crsp_for_dec["permno"], errors="coerce").astype("Int64")
@@ -512,9 +453,6 @@ weekly_controls = weekly_controls.merge(
     how="left"
 )
 
-# ---------------------------------------------------------
-# 6) Align to RSJ sample and save
-# ---------------------------------------------------------
 print("Aligning final controls to RSJ weekly sample...")
 
 final = rsj_keys.merge(

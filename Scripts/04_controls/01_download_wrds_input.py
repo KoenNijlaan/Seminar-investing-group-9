@@ -1,40 +1,31 @@
+"""
+Download WRDS Inputs
+
+Purpose:
+  Download required WRDS source tables used in controls and factors construction.
+
+Inputs:
+  - WRDS credentials and SQL queries defined in this script.
+
+Outputs:
+  - Local WRDS extracts in data_raw/wrds.
+
+Main Steps:
+  - Run CRSP and Compustat queries.
+  - Store downloaded datasets locally.
+  - Keep outputs in parquet format.
+"""
 from pathlib import Path
 import math
 import pandas as pd
 import wrds
 
-# =========================================================
-# PURPOSE
-# =========================================================
-# Download WRDS inputs needed for control variables:
-#
-#   - CRSP daily stock data      -> ME, MOM, REV, ILLIQ, IVOL inputs
-#   - CRSP delisting returns     -> adjusted returns if needed later
-#   - Compustat annual funda     -> BM inputs
-#   - CCM link table             -> CRSP-Compustat merge for BM
-#   - Fama-French daily factors  -> IVOL
-#
-# SPACE-SAVING APPROACH:
-#   Restrict CRSP downloads to PERMNOs that appear in:
-#       data_intermediate/rsj_weekly/rsj_weekly.parquet
-#
-# OUTPUTS:
-#   data_raw/wrds/crsp_daily_rsj_sample_1992_2024.parquet
-#   data_raw/wrds/crsp_delist_rsj_sample_1992_2024.parquet
-#   data_raw/wrds/ff_daily_factors_1992_2024.parquet
-#   data_raw/wrds/comp_funda_1991_2024.parquet
-#   data_raw/wrds/ccm_linktable.parquet
-# =========================================================
-
-# ---------------------------------------------------------
-# Settings
-# ---------------------------------------------------------
 RSJ_WEEKLY_PATH = Path("data_intermediate/rsj_weekly/rsj_weekly.parquet")
 OUT_DIR = Path("data_raw/wrds")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-CRSP_START = "1992-01-01"   # one extra year for lagged controls
-COMP_START = "1991-01-01"   # one extra year for BM timing
+CRSP_START = "1992-01-01"
+COMP_START = "1991-01-01"
 END_DATE = "2024-12-31"
 
 CRSP_OUT = OUT_DIR / "crsp_daily_rsj_sample_1992_2024.parquet"
@@ -43,15 +34,10 @@ FF_OUT = OUT_DIR / "ff_daily_factors_1992_2024.parquet"
 COMP_OUT = OUT_DIR / "comp_funda_1991_2024.parquet"
 CCM_OUT = OUT_DIR / "ccm_linktable.parquet"
 
-# Fama-French library fallback order
 FF_LIBRARY_CANDIDATES = ["ff_all", "ff"]
 
-# Query chunk size for PERMNO filtering
 CHUNK_SIZE = 800
 
-# ---------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------
 def chunked(seq, size):
     seq = list(seq)
     for i in range(0, len(seq), size):
@@ -61,10 +47,6 @@ def sql_in_list(values):
     return "(" + ",".join(str(int(v)) for v in values) + ")"
 
 def find_ff_table(db):
-    """
-    Find the daily Fama-French factors table on this WRDS account.
-    Returns (library, table_name).
-    """
     preferred_names = [
         "factors_daily",
         "ff_factors_daily",
@@ -81,7 +63,6 @@ def find_ff_table(db):
             if name in tables:
                 return lib, name
 
-        # Fallback: look for any daily factor-like table
         for t in sorted(tables):
             tl = t.lower()
             if "daily" in tl and ("factor" in tl or "ff" in tl):
@@ -92,9 +73,6 @@ def find_ff_table(db):
         "Run Scripts/04_controls/00_check_wrds_tables.py first."
     )
 
-# ---------------------------------------------------------
-# Load RSJ sample PERMNOs
-# ---------------------------------------------------------
 print("Loading RSJ weekly file...")
 rsj = pd.read_parquet(RSJ_WEEKLY_PATH)
 
@@ -115,15 +93,9 @@ if not permnos:
 
 print(f"Found {len(permnos):,} unique PERMNOs in RSJ sample.")
 
-# ---------------------------------------------------------
-# Connect WRDS
-# ---------------------------------------------------------
 print("\nConnecting to WRDS...")
 db = wrds.Connection()
 
-# ---------------------------------------------------------
-# 1) CRSP daily stock data, restricted to RSJ PERMNOs
-# ---------------------------------------------------------
 print("\nDownloading CRSP daily stock data in chunks...")
 
 crsp_parts = []
@@ -168,18 +140,14 @@ for idx, chunk in enumerate(chunked(permnos, CHUNK_SIZE), start=1):
 crsp = pd.concat(crsp_parts, ignore_index=True)
 crsp = crsp.drop_duplicates(subset=["permno", "date"]).copy()
 
-# CRSP cleanups
 crsp["prc"] = crsp["prc"].abs()
-crsp["me"] = crsp["prc"] * crsp["shrout"]            # market equity in $ thousands
-crsp["dollar_vol"] = crsp["prc"] * crsp["vol"]       # daily dollar trading volume proxy
+crsp["me"] = crsp["prc"] * crsp["shrout"]
+crsp["dollar_vol"] = crsp["prc"] * crsp["vol"]
 
 crsp.to_parquet(CRSP_OUT, index=False)
 print(f"Saved: {CRSP_OUT}")
 print(f"CRSP rows: {len(crsp):,}")
 
-# ---------------------------------------------------------
-# 2) CRSP delisting returns, restricted to RSJ PERMNOs
-# ---------------------------------------------------------
 print("\nDownloading CRSP delisting data in chunks...")
 
 delist_parts = []
@@ -211,9 +179,6 @@ delist.to_parquet(DELIST_OUT, index=False)
 print(f"Saved: {DELIST_OUT}")
 print(f"Delist rows: {len(delist):,}")
 
-# ---------------------------------------------------------
-# 3) Fama-French daily factors
-# ---------------------------------------------------------
 print("\nLocating Fama-French daily factor table...")
 ff_lib, ff_table = find_ff_table(db)
 print(f"Using {ff_lib}.{ff_table}")
@@ -232,7 +197,6 @@ order by date
 
 ff = db.raw_sql(sql_ff, date_cols=["date"])
 
-# WRDS Fama-French factors are typically stored in percent units; convert to decimals.
 for col in ["mktrf", "smb", "hml", "rf"]:
     ff[col] = ff[col] / 100.0
 
@@ -240,9 +204,6 @@ ff.to_parquet(FF_OUT, index=False)
 print(f"Saved: {FF_OUT}")
 print(f"FF rows: {len(ff):,}")
 
-# ---------------------------------------------------------
-# 4) Compustat annual fundamentals
-# ---------------------------------------------------------
 print("\nDownloading Compustat annual fundamentals...")
 
 sql_comp = f"""
@@ -275,9 +236,6 @@ comp.to_parquet(COMP_OUT, index=False)
 print(f"Saved: {COMP_OUT}")
 print(f"Compustat rows: {len(comp):,}")
 
-# ---------------------------------------------------------
-# 5) CCM link table
-# ---------------------------------------------------------
 print("\nDownloading CCM link table...")
 
 sql_ccm = """
@@ -299,9 +257,6 @@ ccm.to_parquet(CCM_OUT, index=False)
 print(f"Saved: {CCM_OUT}")
 print(f"CCM rows: {len(ccm):,}")
 
-# ---------------------------------------------------------
-# Done
-# ---------------------------------------------------------
 db.close()
 
 print("\nAll WRDS downloads complete.")

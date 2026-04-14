@@ -1,10 +1,24 @@
+"""
+Finalize RES Decomposition
+
+Purpose:
+  Merge and finalize RES decomposition components into analysis-ready variables.
+
+Inputs:
+  - Intermediate RES decomposition files.
+
+Outputs:
+  - Final RES variables for the panel.
+
+Main Steps:
+  - Load intermediate components.
+  - Merge by stock-week keys.
+  - Write finalized RES dataset.
+"""
 from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# ============================================================
-# Settings
-# ============================================================
 ROOT = Path(__file__).resolve().parents[2]
 
 INPUT_DIR = ROOT / "data_intermediate" / "decomposition" / "log_returns_split_spy_daily"
@@ -22,15 +36,10 @@ H = 0.5
 EXPECTED_INTERVALS = 78
 MIN_VALID_DAYS_PER_WEEK = 3
 
-
-# ============================================================
-# Helpers
-# ============================================================
 def clean_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
     return df
-
 
 def to_float_array(x, expected_len=None):
     if x is None:
@@ -45,7 +54,6 @@ def to_float_array(x, expected_len=None):
         return None
     arr[~np.isfinite(arr)] = np.nan
     return arr
-
 
 def empirical_es(x: np.ndarray, p: float):
     if x is None or len(x) == 0:
@@ -65,7 +73,6 @@ def empirical_es(x: np.ndarray, p: float):
 
     es = tail.mean()
     return q, es, len(tail)
-
 
 def compute_weekly_res_from_arrays(arrays, p=P, h=H):
     valid = []
@@ -105,7 +112,6 @@ def compute_weekly_res_from_arrays(arrays, p=P, h=H):
         "res_pos": float(-res_raw) if np.isfinite(res_raw) else np.nan,
     }
 
-
 def discover_files(input_dir: Path) -> pd.DataFrame:
     files = sorted(input_dir.glob("*.parquet"))
     if not files:
@@ -129,7 +135,6 @@ def discover_files(input_dir: Path) -> pd.DataFrame:
         raise ValueError("No date-named parquet files found.")
 
     return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
-
 
 def read_daily_file(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path)
@@ -165,10 +170,6 @@ def read_daily_file(path: Path) -> pd.DataFrame:
     df["week_end"] = pd.to_datetime(df["week_end"]).dt.normalize()
     return df
 
-
-# ============================================================
-# Weekly aggregation
-# ============================================================
 def aggregate_one_week(week_files: pd.DataFrame, p=P, h=H) -> pd.DataFrame:
     parts = []
 
@@ -184,7 +185,6 @@ def aggregate_one_week(week_files: pd.DataFrame, p=P, h=H) -> pd.DataFrame:
     df = pd.concat(parts, ignore_index=True)
     df = df.sort_values(["permno", "date"]).reset_index(drop=True)
 
-    # Recompute week_end from date using W-TUE, overriding whatever is stored in files
     df["week_end"] = df["date"].dt.to_period("W-TUE").dt.end_time.dt.normalize()
 
     results = []
@@ -269,10 +269,6 @@ def aggregate_one_week(week_files: pd.DataFrame, p=P, h=H) -> pd.DataFrame:
 
     return pd.DataFrame(results).sort_values(["week_end", "permno"]).reset_index(drop=True)
 
-
-# ============================================================
-# Main
-# ============================================================
 def main():
     file_map = discover_files(INPUT_DIR)
 
@@ -328,7 +324,6 @@ def main():
     print(f"Rows: {len(weekly):,}")
     print(f"Weeks: {weekly['week_end'].nunique():,}")
     print(f"Stocks: {weekly['permno'].nunique():,}")
-
 
 if __name__ == "__main__":
     main()

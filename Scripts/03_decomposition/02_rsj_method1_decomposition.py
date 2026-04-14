@@ -1,3 +1,20 @@
+"""
+RSJ Method-1 Decomposition
+
+Purpose:
+  Compute method-1 systematic and idiosyncratic RSJ components.
+
+Inputs:
+  - Method-1 stock and market intraday inputs.
+
+Outputs:
+  - Method-1 decomposition files in data_intermediate/decomposition.
+
+Main Steps:
+  - Load method-1 inputs.
+  - Run decomposition calculations.
+  - Save weekly component files.
+"""
 from pathlib import Path
 import sys
 import sqlite3
@@ -5,10 +22,6 @@ import gc
 import numpy as np
 import pandas as pd
 
-
-# =========================================================
-# Settings
-# =========================================================
 STOCK_DIR = Path("data_intermediate/converted_parquet")
 MARKET_FILE = Path("data_intermediate/market_returns/market_intraday_spy.parquet")
 
@@ -23,14 +36,10 @@ NOBS_COL = "n_obs"
 
 LOOKBACK_WEEKS = 4
 MIN_DAY_OBS = 80
-MIN_BETA_OBS = 160   # minimum aligned observations in the 4-week lookback
+MIN_BETA_OBS = 160
 MIN_WEEKLY_OBS = 40
 MIN_WEEKLY_DAYS = 3
 
-
-# =========================================================
-# Helpers
-# =========================================================
 def normalize_date_scalar(x):
     ts = pd.to_datetime(x, errors="coerce")
     if pd.isna(ts):
@@ -41,10 +50,8 @@ def normalize_date_scalar(x):
         pass
     return ts.normalize()
 
-
 def make_week_from_date(ts):
     return pd.Timestamp(ts).to_period("W-TUE")
-
 
 def extract_return_vector(x):
     if x is None:
@@ -66,7 +73,6 @@ def extract_return_vector(x):
             out.append(np.nan)
     return np.asarray(out, dtype=float)
 
-
 def align_vectors(stock_r, market_r):
     n = min(len(stock_r), len(market_r))
     if n == 0:
@@ -77,7 +83,6 @@ def align_vectors(stock_r, market_r):
 
     mask = np.isfinite(s) & np.isfinite(m)
     return s[mask], m[mask]
-
 
 def compute_alpha_beta_sufficient_stats(stock_r, market_r):
     s, m = align_vectors(stock_r, market_r)
@@ -90,7 +95,6 @@ def compute_alpha_beta_sufficient_stats(stock_r, market_r):
     sxx = float(np.dot(m, m))
     n = int(len(s))
     return sx, sy, sxy, sxx, n
-
 
 def split_returns(stock_r, market_r, alpha, beta):
     stock_r = np.asarray(stock_r, dtype=float)
@@ -116,7 +120,6 @@ def split_returns(stock_r, market_r, alpha, beta):
 
     return r_sys, r_idio
 
-
 def semivar_pos(r):
     r = np.asarray(r, dtype=float)
     r = r[np.isfinite(r)]
@@ -127,7 +130,6 @@ def semivar_pos(r):
         return 0.0
     return float(np.sum(x ** 2))
 
-
 def semivar_neg(r):
     r = np.asarray(r, dtype=float)
     r = r[np.isfinite(r)]
@@ -137,7 +139,6 @@ def semivar_neg(r):
     if len(x) == 0:
         return 0.0
     return float(np.sum(x ** 2))
-
 
 def compute_rsj_from_returns(r):
     rv_pos = semivar_pos(r)
@@ -153,10 +154,6 @@ def compute_rsj_from_returns(r):
     rsj = (rv_pos - rv_neg) / denom
     return float(rsj), float(rv_pos), float(rv_neg)
 
-
-# =========================================================
-# SQLite helpers
-# =========================================================
 def init_db(conn):
     cur = conn.cursor()
 
@@ -185,7 +182,6 @@ def init_db(conn):
 
     conn.commit()
 
-
 def upsert_weekly_stats(conn, records):
     if not records:
         return
@@ -202,7 +198,6 @@ def upsert_weekly_stats(conn, records):
     """, records)
     conn.commit()
 
-
 def insert_betas(conn, records):
     if not records:
         return
@@ -213,10 +208,6 @@ def insert_betas(conn, records):
     """, records)
     conn.commit()
 
-
-# =========================================================
-# Load market once
-# =========================================================
 def load_market_map():
     if not MARKET_FILE.exists():
         raise FileNotFoundError(f"Market file does not exist: {MARKET_FILE}")
@@ -241,10 +232,6 @@ def load_market_map():
 
     return market_map
 
-
-# =========================================================
-# Main
-# =========================================================
 def main():
     if not STOCK_DIR.exists():
         raise FileNotFoundError(f"Stock directory does not exist: {STOCK_DIR}")
@@ -265,9 +252,6 @@ def main():
     conn = sqlite3.connect(WORK_DB)
     init_db(conn)
 
-    # -----------------------------------------------------
-    # Build global overlapping week index
-    # -----------------------------------------------------
     common_dates = []
     stock_file_meta = []
 
@@ -285,9 +269,6 @@ def main():
     all_weeks = sorted({make_week_from_date(dt) for _, dt in stock_file_meta})
     week_to_idx = {w: i for i, w in enumerate(all_weeks)}
 
-    # -----------------------------------------------------
-    # PASS 1: weekly sufficient stats for rolling alpha/beta
-    # -----------------------------------------------------
     print("\nPASS 1: Building weekly alpha/beta statistics...")
 
     for i, (stock_file, trade_date) in enumerate(stock_file_meta, start=1):
@@ -324,9 +305,6 @@ def main():
         if i % 250 == 0:
             gc.collect()
 
-    # -----------------------------------------------------
-    # Compute rolling alphas and betas
-    # -----------------------------------------------------
     print("\nComputing rolling weekly alpha/beta...")
 
     weekly_stats_df = pd.read_sql_query(
@@ -405,9 +383,6 @@ def main():
     del weekly_stats_df, betas_df
     gc.collect()
 
-    # -----------------------------------------------------
-    # PASS 2: compute daily Method 1 RSJ and save per day
-    # -----------------------------------------------------
     print("\nPASS 2: Computing daily Method 1 RSJ...")
 
     weekly_agg = {}
@@ -449,7 +424,6 @@ def main():
 
             r_sys, r_idio = split_returns(stock_returns, market_returns, alpha, beta)
 
-            # aligned obs count
             n_obs = int(np.sum(np.isfinite(r_sys))) if len(r_sys) > 0 else 0
 
             rsj_sys_d, rv_pos_sys, rv_neg_sys = compute_rsj_from_returns(r_sys)
@@ -480,7 +454,7 @@ def main():
                 }
 
             rec = weekly_agg[key]
-            # Use one common D_w set: only days where both daily RSJ components are defined.
+
             if pd.notna(rsj_sys_d) and pd.notna(rsj_idio_d):
                 rec["sum_rsj_sys"] += rsj_sys_d
                 rec["sum_rsj_idio"] += rsj_idio_d
@@ -502,9 +476,6 @@ def main():
 
     conn.close()
 
-    # -----------------------------------------------------
-    # Build weekly output
-    # -----------------------------------------------------
     weekly_rows = []
 
     for (permno, week_idx), rec in weekly_agg.items():
@@ -536,7 +507,6 @@ def main():
     print(f"Weekly output: {WEEKLY_OUTPUT_FILE}")
     print(f"Betas output: {BETAS_OUTPUT_FILE}")
     print(f"Temporary DB: {WORK_DB}")
-
 
 if __name__ == "__main__":
     try:

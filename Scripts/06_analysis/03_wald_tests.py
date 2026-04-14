@@ -1,36 +1,25 @@
 """
-Wald tests on decomposed Fama-MacBeth coefficients.
+Wald Tests
 
-Loads the weekly slope series from:
-    data_final/results/intermediate/fm_coefs_B7.parquet  (M1 full decomposition)
-    data_final/results/intermediate/fm_coefs_B8.parquet  (M2 full decomposition)
+Purpose:
+  Test linear coefficient restrictions and cross-model hypotheses using Wald statistics.
 
-Coefficient vector for each decomposition:
-  β = [β_RSJ_sys, β_RSJ_idio, β_RES_sys, β_RES_idio]   (in this order)
+Inputs:
+  - Regression coefficients and covariance inputs from analysis outputs.
 
-Tests:
-  H1: β_RSJ_sys = β_RSJ_idio              R=[1,-1, 0, 0],     r=0,    df=1
-  H2: β_RES_sys = β_RES_idio              R=[0, 0, 1,-1],     r=0,    df=1
-  H3: β_RSJ_idio=0 AND β_RES_idio=0       R=[[0,1,0,0],[0,0,0,1]], r=0, df=2
-  H4: β_RSJ_sys=0  AND β_RES_sys=0        R=[[1,0,0,0],[0,0,1,0]], r=0, df=2
+Outputs:
+  - Wald test summary tables and supporting files.
 
-Nonlinear Wald statistic: W = g(β̄)' [G Var(β̄) G']^{-1} g(β̄) ~ chi²(df) under H0
-  H1/H2 use g(β) = β_sys² - β_idio², G = [2β_sys, -2β_idio, ...]  (exact Jacobian)
-  H3/H4 are linear: g(β) = Rβ, G = R
-
-Var(β̄) = S_NW / T  where S_NW is the NW(6) long-run covariance matrix.
-
-Output:
-  data_final/results/tables/tab_wald_tests.tex
+Main Steps:
+  - Define restriction matrices.
+  - Compute Wald statistics and p-values.
+  - Write formatted output tables.
 """
 from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy import stats as scipy_stats
 
-# ============================================================
-# Settings
-# ============================================================
 ROOT      = Path(__file__).resolve().parents[2]
 INTER_DIR = ROOT / "data_final" / "results" / "intermediate"
 TABLE_DIR = ROOT / "data_final" / "results" / "tables"
@@ -38,7 +27,6 @@ TABLE_DIR.mkdir(parents=True, exist_ok=True)
 
 NW_LAGS = 6
 
-# Ordered coefficient columns for each decomposition spec
 DECOMP_COLS = {
     "B7": ["rsj_sys_weekly", "rsj_idio_weekly", "res_sys_p025", "res_idio_p025"],
     "B8": ["rsj_sys",        "rsj_idio",        "res_sys_p025", "res_idio_p025"],
@@ -51,37 +39,17 @@ PRED_LABEL = {
             "res_sys_p025": "RES sys", "res_idio_p025": "RES idio"},
 }
 
-
-# ============================================================
-# NW covariance of mean
-# ============================================================
 def nw_cov_mean(B: np.ndarray, lags: int) -> np.ndarray:
-    """
-    NW long-run covariance matrix of the time-averaged coefficient vector.
-    B : T × k  matrix of weekly coefficient vectors
-    Returns Var(β̄) = S_NW / T
-    """
     T, k     = B.shape
     demeaned = B - B.mean(axis=0)
-    S = demeaned.T @ demeaned / T          # Gamma_0
+    S = demeaned.T @ demeaned / T
     for l in range(1, lags + 1):
-        w       = 1.0 - l / (lags + 1)    # Bartlett weight
+        w       = 1.0 - l / (lags + 1)
         gamma_l = demeaned[l:].T @ demeaned[:-l] / T
         S      += w * (gamma_l + gamma_l.T)
-    return S / T                           # Var(β̄)
+    return S / T
 
-
-# ============================================================
-# Wald test (nonlinear form)
-# ============================================================
 def wald_test(g_val: np.ndarray, G: np.ndarray, cov_mat: np.ndarray) -> dict:
-    """
-    Nonlinear Wald test.
-      g_val : q-vector  g(β̄)
-      G     : q × k Jacobian  ∂g/∂β̄'
-      cov_mat : k × k  Var(β̄)
-    W = g' [G V G']^{-1} g ~ chi²(q)
-    """
     V = G @ cov_mat @ G.T
     try:
         W = float(g_val @ np.linalg.solve(V, g_val))
@@ -91,36 +59,20 @@ def wald_test(g_val: np.ndarray, G: np.ndarray, cov_mat: np.ndarray) -> dict:
     p  = float(1 - scipy_stats.chi2.cdf(W, df))
     return dict(W=W, df=df, p=p)
 
-
-# ============================================================
-# Build restriction matrices (fixed order: sys_RSJ, idio_RSJ, sys_RES, idio_RES)
-# ============================================================
 def make_restrictions(mean_b: np.ndarray):
-    """
-    Returns (label, g_val, G) tuples for the nonlinear Wald test.
-    β index: 0=RSJ_sys, 1=RSJ_idio, 2=RES_sys, 3=RES_idio
-
-    H1: |β1| = |β2|  ↔  β1² - β2² = 0,  G1 = [2β1, -2β2, 0, 0]
-    H2: |β3| = |β4|  ↔  β3² - β4² = 0,  G2 = [0, 0, 2β3, -2β4]
-    H3/H4: linear zero restrictions; g = Rβ, G = R
-    """
     b = mean_b
 
-    # H1: nonlinear
     g1 = np.array([b[0]**2 - b[1]**2])
     G1 = np.array([[2*b[0], -2*b[1], 0.0, 0.0]])
 
-    # H2: nonlinear
     g2 = np.array([b[2]**2 - b[3]**2])
     G2 = np.array([[0.0, 0.0, 2*b[2], -2*b[3]]])
 
-    # H3: β_RSJ_idio = 0 AND β_RES_idio = 0
     R3 = np.array([[0, 1, 0, 0],
                    [0, 0, 0, 1]], dtype=float)
     g3 = R3 @ b
     G3 = R3
 
-    # H4: β_RSJ_sys = 0 AND β_RES_sys = 0
     R4 = np.array([[1, 0, 0, 0],
                    [0, 0, 1, 0]], dtype=float)
     g4 = R4 @ b
@@ -133,10 +85,6 @@ def make_restrictions(mean_b: np.ndarray):
         (r"$H_4$: $\beta^\mathrm{RSJ}_\mathrm{sys} = \beta^\mathrm{RES}_\mathrm{sys} = 0$",   g4, G4),
     ]
 
-
-# ============================================================
-# Run Wald tests for one decomposition spec
-# ============================================================
 def run_wald(spec_key):
     fpath = INTER_DIR / f"fm_coefs_{spec_key}.parquet"
     if not fpath.exists():
@@ -148,12 +96,10 @@ def run_wald(spec_key):
     df["week"] = pd.to_datetime(df["week"])
     cols = DECOMP_COLS[spec_key]
 
-    # Check all needed columns exist
     missing = [c for c in cols if c not in df.columns]
     if missing:
         raise KeyError(f"Spec {spec_key}: missing columns {missing} in {fpath.name}")
 
-    # Build T × 4 matrix (drop weeks where any component is NaN)
     B = df[cols].dropna().to_numpy(dtype=float)
     T = len(B)
     print(f"  {spec_key}: {T} valid weeks")
@@ -177,10 +123,6 @@ def run_wald(spec_key):
 
     return pd.DataFrame(rows), mean_b, V
 
-
-# ============================================================
-# LaTeX table
-# ============================================================
 def build_latex(df_m1, df_m2):
     def _p_stars(p):
         if np.isnan(p): return ""
@@ -197,7 +139,6 @@ def build_latex(df_m1, df_m2):
         if np.isnan(val): return ""
         return f"{val:.4f}"
 
-    # Merge on hypothesis
     m1 = df_m1.rename(columns={"W_M1": "W_M1", "p_M1": "p_M1"})
     m2 = df_m2.rename(columns={"W_M2": "W_M2", "p_M2": "p_M2"})
     merged = m1.merge(m2[["hypothesis","W_M2","p_M2"]], on="hypothesis", how="outer")
@@ -239,10 +180,6 @@ def build_latex(df_m1, df_m2):
               r"\end{threeparttable}", r"\end{table}"]
     return "\n".join(lines)
 
-
-# ============================================================
-# Main
-# ============================================================
 def main():
     print("=== Wald Tests on FM Coefficients ===\n")
 
@@ -252,13 +189,11 @@ def main():
     print("\n--- M2 decomposition (B8) ---")
     df_m2, mean_m2, _ = run_wald("B8")
 
-    # Build combined table
     tex = build_latex(df_m1, df_m2)
     out = TABLE_DIR / "tab_wald_tests.tex"
     out.write_text(tex, encoding="utf-8")
     print(f"\nSaved: {out.name}")
 
-    # Console summary
     print("\n--- M1 mean betas (bps) ---")
     for lbl, val in zip(DECOMP_COLS["B7"], mean_m1 * 10_000):
         print(f"  {lbl:<30} {val:>8.2f}")
@@ -268,7 +203,6 @@ def main():
         print(f"  {lbl:<30} {val:>8.2f}")
 
     print("\n=== Done ===")
-
 
 if __name__ == "__main__":
     main()

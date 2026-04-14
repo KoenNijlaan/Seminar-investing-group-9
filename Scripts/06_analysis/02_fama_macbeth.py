@@ -1,30 +1,19 @@
 """
-Fama-MacBeth cross-sectional regressions. NW(6) throughout.
+Fama-MacBeth Regressions
 
-Specifications (methodology-consistent naming):
-    B1   RSJ + controls
-    B2   RES + controls
-    B3   RSJ + RES + controls
-    B4   RSJ decomposition (M1) + controls
-    B5   RSJ decomposition (M2) + controls
-    B6   RES decomposition + controls
-    B7   Full decomposition using RSJ M1 + controls
-    B8   Full decomposition using RSJ M2 + controls
-    B9   RSJ idiosyncratic (M1) + RES idiosyncratic + controls
-    B10  RSJ systematic (M1) + RES idiosyncratic + controls
+Purpose:
+  Estimate weekly cross-sectional regressions and summarize coefficient evidence.
 
-Controls X: log_me (me), bm, mom, rev, ivol, illiq  — winsorized 1/99 pct per week.
-All slope coefficients reported in bps/week (×10,000).
-
-Intermediate output (weekly coefficient series) saved per spec; needed by
-03_wald_tests.py and 04_crisis_state.py.
+Inputs:
+  - Final weekly panel with predictors and controls.
 
 Outputs:
-  data_final/results/intermediate/fm_coefs_{spec}.parquet  (all specs)
-  data_final/results/tables/tab_fm_aggregate.tex
-  data_final/results/tables/tab_fm_decomposition.tex
-  data_final/results/tables/tab_fm_supplementary.tex
-  data_final/results/figures/fig_fm_coefficients_selected.{pdf,png}
+  - Fama-MacBeth result tables and coefficient figures.
+
+Main Steps:
+  - Run weekly OLS for each specification.
+  - Aggregate coefficients with HAC/Newey-West inference.
+  - Export formatted tables and plots.
 """
 from pathlib import Path
 import numpy as np
@@ -34,9 +23,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# ============================================================
-# Settings
-# ============================================================
 ROOT       = Path(__file__).resolve().parents[2]
 PANEL_FILE = ROOT / "data_final" / "panel" / "weekly_panel.parquet"
 INTER_DIR  = ROOT / "data_final" / "results" / "intermediate"
@@ -56,7 +42,6 @@ NBER_PERIODS = [
     ("2020-02-01", "2020-04-30"),
 ]
 
-# Predictors shown in correlation heatmap
 HEATMAP_PREDS = [
     "rsj_weekly", "rsj_sys_weekly", "rsj_idio_weekly",
     "rsj_sys", "rsj_idio",
@@ -97,11 +82,6 @@ CTRL_LABEL = {
     "rkt":   "RKT",
 }
 
-# ============================================================
-# Regression specifications
-# ============================================================
-#  Each entry: (spec_id, rhs_vars_list)
-#  Controls are identified by membership in CONTROLS set.
 SPECS = {
     "B1":  ["rsj_weekly"] + CONTROLS,
     "B2":  ["res_weekly"] + CONTROLS,
@@ -115,7 +95,6 @@ SPECS = {
     "B10": ["rsj_sys_weekly", "res_idio_p025"] + CONTROLS,
 }
 
-# Human-readable labels for predictor display
 PRED_LABEL = {
     "rsj_weekly":      "RSJ",
     "res_weekly":      "RES",
@@ -131,10 +110,6 @@ PRED_LABEL = {
     "rkt":  "RKT",
 }
 
-
-# ============================================================
-# Helpers
-# ============================================================
 def _stars(t):
     if t is None or (isinstance(t, float) and np.isnan(t)):
         return ""
@@ -144,7 +119,6 @@ def _stars(t):
     if t > 1.645: return "*"
     return ""
 
-
 def _fmt(val, t=None, dec=2):
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return ""
@@ -153,21 +127,16 @@ def _fmt(val, t=None, dec=2):
         s += _stars(t)
     return s
 
-
 def _fmt_pct(val):
-    """Format a proportion as a percentage string, e.g. 0.0537 → '5.37\\%'."""
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return ""
     return f"{float(val) * 100:.2f}\\%"
-
 
 def winsorize_cs(s: pd.Series) -> pd.Series:
     lo, hi = s.quantile(WINSOR_LOW), s.quantile(WINSOR_HIGH)
     return s.clip(lo, hi)
 
-
 def nw_average(arr, lags):
-    """NW HAC mean. Returns (mean_bps, t_stat, se_bps)."""
     y = arr[np.isfinite(arr)]
     if len(y) < 10:
         return np.nan, np.nan, np.nan
@@ -179,9 +148,7 @@ def nw_average(arr, lags):
     se  = float(res.bse[0])
     return m * 10_000, t, se * 10_000
 
-
 def run_weekly_cs(df_week, predictors):
-    """One-week OLS. Returns {predictor: coef, 'rsq_adj': float, 'n': int} or None."""
     sub = df_week[["R_i_w_plus_1"] + predictors].dropna()
     if len(sub) < MIN_STOCKS:
         return None
@@ -199,17 +166,7 @@ def run_weekly_cs(df_week, predictors):
         out[p] = float(res.params[i + 1])
     return out
 
-
-# ============================================================
-# Main FM loop
-# ============================================================
 def run_fm(panel):
-    """
-    Run all specs. Returns:
-      all_weekly: dict spec → DataFrame(week, pred1, pred2, ..., rsq_adj, n)
-      summary: dict spec → dict pred → (mean_bps, t, se_bps)
-      avg_rsq: dict spec → float
-    """
     all_weekly = {}
     summary    = {}
     avg_rsq    = {}
@@ -257,25 +214,18 @@ def run_fm(panel):
 
     return all_weekly, summary, avg_rsq
 
-
-# ============================================================
-# LaTeX helpers
-# ============================================================
 def _tex_head(cols_header, col_spec):
     return (
-        r"\toprule" "\n"
-        + cols_header + r" \\" "\n"
+        r"\toprule"  "\n"
+        + cols_header + r" \\"  "\n"
         + r"\midrule"
     )
 
-
 def build_tab_aggregate(summary, avg_rsq, all_weekly):
-    """tab_fm_aggregate.tex — 3 columns (B1-B3)."""
     specs  = ["B1", "B2", "B3"]
     labels = ["(B1) RSJ+ctrl", "(B2) RES+ctrl", "(B3) RSJ+RES+ctrl"]
     n_cols = len(specs)
 
-    # Row order: focal predictors first, then controls
     focal = ["rsj_weekly", "res_weekly"]
     rows_vars = focal + CONTROLS
 
@@ -285,7 +235,6 @@ def build_tab_aggregate(summary, avg_rsq, all_weekly):
         m, t, _ = summary[spec][pred]
         return _fmt(m, t), f"({t:.2f})" if np.isfinite(t) else ""
 
-    # N weeks from first predictor
     def n_wk(spec):
         if spec not in all_weekly:
             return ""
@@ -327,9 +276,7 @@ def build_tab_aggregate(summary, avg_rsq, all_weekly):
               r"\end{threeparttable}", r"\end{table}"]
     return "\n".join(lines)
 
-
 def build_tab_decomposition(summary, avg_rsq, all_weekly):
-    """tab_fm_decomposition.tex — 5 columns B4-B8."""
     specs  = ["B4", "B5", "B6", "B7", "B8"]
     labels = ["(B4) RSJ M1", "(B5) RSJ M2", "(B6) RES decomp", "(B7) Full M1", "(B8) Full M2"]
     n_cols = len(specs)
@@ -384,9 +331,7 @@ def build_tab_decomposition(summary, avg_rsq, all_weekly):
     note_txt = "B7 (M1 full) is the primary decomposition specification; B8 (M2 full) is the robustness check."
     return "\n".join(lines), note_txt
 
-
 def build_tab_supplementary(summary, avg_rsq, all_weekly):
-    """tab_fm_supplementary.tex — 2 columns B9, B10."""
     specs  = ["B9", "B10"]
     labels = [r"(B9) RSJ$_{\mathrm{idio}}$ + RES$_{\mathrm{idio}}$",
               r"(B10) RSJ$_{\mathrm{sys}}$ + RES$_{\mathrm{idio}}$"]
@@ -440,26 +385,21 @@ def build_tab_supplementary(summary, avg_rsq, all_weekly):
               r"\end{threeparttable}", r"\end{table}"]
     return "\n".join(lines)
 
-
-# ============================================================
-# Figure: coefficient plot with 95% CI
-# ============================================================
 def build_figure(summary):
-    """Horizontal dot-and-whisker. Groups: aggregate, systematic, idiosyncratic."""
-    # Items to plot: (label, color, spec, pred)
+
     items = [
-        # Aggregate from B3
+
         ("RSJ (agg.)",          "#888888", "B3", "rsj_weekly"),
         ("RES (agg.)",          "#888888", "B3", "res_weekly"),
-        # B7 systematic
+
         (r"RSJ$_\mathrm{sys}$ M1", "#2a9d8f", "B7", "rsj_sys_weekly"),
         (r"RES$_\mathrm{sys}$",    "#2a9d8f", "B7", "res_sys_p025"),
-        # B8 systematic
+
         (r"RSJ$_\mathrm{sys}$ M2", "#1d7a6e", "B8", "rsj_sys"),
-        # B7 idiosyncratic
+
         (r"RSJ$_\mathrm{idio}$ M1","#7b2d8b", "B7", "rsj_idio_weekly"),
         (r"RES$_\mathrm{idio}$",   "#7b2d8b", "B7", "res_idio_p025"),
-        # B8 idiosyncratic
+
         (r"RSJ$_\mathrm{idio}$ M2","#5a1f6b", "B8", "rsj_idio"),
     ]
 
@@ -495,7 +435,6 @@ def build_figure(summary):
         spine.set_edgecolor("#aaaaaa")
     ax.grid(False)
 
-    # Legend
     from matplotlib.lines import Line2D
     legend_elements = [
         Line2D([0],[0], color="#888888", marker="o", ms=6, label="Aggregate"),
@@ -506,7 +445,6 @@ def build_figure(summary):
     fig.tight_layout()
     return fig
 
-
 def _add_nber_shading(ax):
     from matplotlib.patches import Patch
     for start, end in NBER_PERIODS:
@@ -514,12 +452,7 @@ def _add_nber_shading(ax):
                    alpha=0.15, color="gray", lw=0)
     return Patch(facecolor="gray", alpha=0.3, label="NBER recession")
 
-
 def build_rolling_b3_figure(inter_dir: Path):
-    """
-    Rolling 52-week mean FM slopes for RSJ and RES from spec B3.
-    Figure fig_time_series_fm_betas_b3.
-    """
     path = inter_dir / "fm_coefs_B3.parquet"
     if not path.exists():
         print("  fm_coefs_B3.parquet not found — skipping fig_time_series_fm_betas_b3.")
@@ -552,12 +485,7 @@ def build_rolling_b3_figure(inter_dir: Path):
     fig.tight_layout()
     return fig
 
-
 def build_rolling_decomp_idio_figure(inter_dir: Path):
-    """
-    Rolling 52-week mean FM slopes for idiosyncratic RSJ (M1) and idiosyncratic RES
-    from spec B7. Figure fig_rolling_fm_decomp_idio.
-    """
     path = inter_dir / "fm_coefs_B7.parquet"
     if not path.exists():
         print("  fm_coefs_B7.parquet not found — skipping fig_rolling_fm_decomp_idio.")
@@ -580,7 +508,7 @@ def build_rolling_decomp_idio_figure(inter_dir: Path):
     ax.plot(roll_res_idio.index, roll_res_idio.values,
             color="#ff7f0e", lw=1.5, label=r"RES$_\mathrm{idio}$")
     ax.axhline(0, color="black", lw=0.8, linestyle="--")
-    # Mark end of Bollerslev sample
+
     ax.axvline(pd.Timestamp("2013-12-31"), color="black", lw=0.8, linestyle=":",
                label="End of Bollerslev (2020) sample")
     handles, lbls = ax.get_legend_handles_labels()
@@ -596,12 +524,7 @@ def build_rolling_decomp_idio_figure(inter_dir: Path):
     fig.tight_layout()
     return fig
 
-
 def build_correlation_heatmap(panel: pd.DataFrame):
-    """
-    Pairwise Pearson correlations among return predictors.
-    Figure fig_predictor_correlation_heatmap.
-    """
     import matplotlib.colors as mcolors
     cols = [c for c in HEATMAP_PREDS if c in panel.columns]
     if len(cols) < 2:
@@ -632,10 +555,6 @@ def build_correlation_heatmap(panel: pd.DataFrame):
     fig.tight_layout()
     return fig
 
-
-# ============================================================
-# Main
-# ============================================================
 def main():
     print("=== Fama-MacBeth Regressions ===\n")
 
@@ -650,44 +569,36 @@ def main():
           f"{panel['permno'].nunique():,} stocks | "
           f"{panel['week'].nunique():,} weeks\n")
 
-    # Winsorize controls
     for c in CONTROLS:
         if c in panel.columns:
             panel[c] = panel.groupby("week")[c].transform(winsorize_cs)
 
-    # Run FM
     all_weekly, summary, avg_rsq = run_fm(panel)
 
-    # Save per-spec intermediate parquet
     for spec, df_wk in all_weekly.items():
         out = INTER_DIR / f"fm_coefs_{spec}.parquet"
         df_wk.to_parquet(out, index=False)
     print(f"\nSaved intermediate parquet files to {INTER_DIR.name}/\n")
 
-    # ---- LaTeX tables ----
-    # Table A
     tex_a = build_tab_aggregate(summary, avg_rsq, all_weekly)
     p = TABLE_DIR / "tab_fm_aggregate.tex"
     p.write_text(tex_a, encoding="utf-8")
     print(f"Saved: {p.name}")
 
-    # Table B
     tex_b_result = build_tab_decomposition(summary, avg_rsq, all_weekly)
     tex_b, decomp_note = tex_b_result
     p = TABLE_DIR / "tab_fm_decomposition.tex"
     p.write_text(tex_b, encoding="utf-8")
     print(f"Saved: {p.name}")
-    # Print and save the decomposition note
+
     print(f"\n[Note] {decomp_note}\n")
     (INTER_DIR / "decomposition_note.txt").write_text(decomp_note, encoding="utf-8")
 
-    # Supplementary
     tex_s = build_tab_supplementary(summary, avg_rsq, all_weekly)
     p = TABLE_DIR / "tab_fm_supplementary.tex"
     p.write_text(tex_s, encoding="utf-8")
     print(f"Saved: {p.name}")
 
-    # ---- Figures ----
     fig = build_figure(summary)
     if fig is not None:
         for ext in ("pdf", "png"):
@@ -720,7 +631,6 @@ def main():
         plt.close(fig_hmap)
         print(f"Saved: fig_predictor_correlation_heatmap.pdf/.png")
 
-    # ---- Console summary ----
     print("\n" + "=" * 80)
     print("FAMA-MACBETH RESULTS  (bps/week)")
     print("=" * 80)
@@ -741,7 +651,6 @@ def main():
     print("\n=== Done ===")
     print("Run 03_wald_tests.py  -- uses fm_coefs_B7.parquet and fm_coefs_B8.parquet")
     print("Run 04_crisis_state.py -- uses fm_coefs_B7.parquet and fm_coefs_B3.parquet")
-
 
 if __name__ == "__main__":
     main()

@@ -1,13 +1,19 @@
 """
-Master script: run all analysis scripts in the correct execution order.
+Run All Results Scripts
 
-Execution order (as specified):
-  1. Scripts/06_analysis/01_portfolio_sorts.py
-  2. Scripts/06_analysis/02_fama_macbeth.py       ← saves intermediate coefs
-  3. Scripts/06_analysis/03_wald_tests.py          ← needs intermediate from step 2
-  4. Scripts/06_analysis/04_crisis_state.py        ← needs intermediate from step 2
-  5. Scripts/06_analysis/05_illiquidity.py
-  6. Scripts/06_analysis/06_verify_and_regenerate_figures.py
+Purpose:
+  Run the result-generation scripts in sequence from one entry point.
+
+Inputs:
+  - Configured results scripts and required datasets.
+
+Outputs:
+  - Refreshed result tables and related artifacts.
+
+Main Steps:
+  - Define execution order.
+  - Run each script.
+  - Report run status and completion.
 """
 from __future__ import annotations
 
@@ -26,7 +32,6 @@ SCRIPTS = [
     ANALYSIS_DIR / "06_verify_and_regenerate_figures.py",
 ]
 
-
 def run_script(script_path: Path) -> None:
     spec = importlib.util.spec_from_file_location(script_path.stem, script_path)
     if spec is None or spec.loader is None:
@@ -36,7 +41,6 @@ def run_script(script_path: Path) -> None:
     if not hasattr(mod, "main"):
         raise AttributeError(f"No main() in: {script_path}")
     mod.main()
-
 
 def main() -> None:
     print("=== Run All Analysis Scripts ===\n")
@@ -50,7 +54,6 @@ def main() -> None:
         run_script(p)
 
     print("\n=== All done. Outputs in data_final/results/ ===")
-
 
 if __name__ == "__main__":
     main()

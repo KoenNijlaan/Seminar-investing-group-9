@@ -1,23 +1,25 @@
 """
-Subsample analysis: Pre-2008 vs. Post-2008 (from 2008-01-01 onwards).
+Subsample Robustness Analysis
 
-Runs the same quintile portfolio sorts and Fama-MacBeth regressions
-as 01_portfolio_sorts.py and 02_fama_macbeth.py, but separately on each
-subsample. Produces comparison LaTeX tables.
+Purpose:
+  Re-run core tests on subsamples and compare results across periods/groups.
+
+Inputs:
+  - Final panel and subsample split definitions.
 
 Outputs:
-  data_final/results/tables/tab_subsample_portfolio_spreads.tex
-  data_final/results/tables/tab_subsample_fm_aggregate.tex
-  data_final/results/tables/tab_subsample_fm_decomposition.tex
+  - Subsample robustness tables and supporting summaries.
+
+Main Steps:
+  - Define subsamples.
+  - Run sort and regression analyses per subsample.
+  - Export side-by-side comparison tables.
 """
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 
-# ============================================================
-# Settings
-# ============================================================
 ROOT       = Path(__file__).resolve().parents[2]
 PANEL_FILE = ROOT / "data_final" / "panel" / "weekly_panel.parquet"
 FF_FILE    = ROOT / "data_raw" / "wrds" / "ff_daily_factors_1992_2024.parquet"
@@ -27,7 +29,7 @@ INTER_DIR  = ROOT / "data_final" / "results" / "intermediate"
 TABLE_DIR.mkdir(parents=True, exist_ok=True)
 INTER_DIR.mkdir(parents=True, exist_ok=True)
 
-SPLIT_DATE = pd.Timestamp("2008-01-01")   # Post-2008: week >= this date
+SPLIT_DATE = pd.Timestamp("2008-01-01")
 
 NW_LAGS    = 6
 MIN_STOCKS = 50
@@ -95,10 +97,6 @@ PRED_LABEL = {
 
 CTRL_LABEL = {k: PRED_LABEL[k] for k in CONTROLS}
 
-
-# ============================================================
-# Shared helpers
-# ============================================================
 def _stars(t):
     if t is None or (isinstance(t, float) and np.isnan(t)):
         return ""
@@ -108,7 +106,6 @@ def _stars(t):
     if t > 1.645: return "*"
     return ""
 
-
 def _fmt(val, t=None, dec=2):
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return ""
@@ -117,12 +114,10 @@ def _fmt(val, t=None, dec=2):
         s += _stars(t)
     return s
 
-
 def _fmt_pct(val):
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return ""
     return f"{float(val) * 100:.2f}\\%"
-
 
 def nw_mean(series, lags):
     y = np.asarray(series, dtype=float)
@@ -134,7 +129,6 @@ def nw_mean(series, lags):
     )
     return float(res.params[0]), float(res.tvalues[0]), float(res.bse[0])
 
-
 def nw_alpha(excess_ret, factors_df, lags):
     df = pd.DataFrame({"y": excess_ret}).join(factors_df).dropna()
     if len(df) < 20:
@@ -145,7 +139,6 @@ def nw_alpha(excess_ret, factors_df, lags):
         cov_type="HAC", cov_kwds={"maxlags": lags, "use_correction": True}
     )
     return float(res.params[0]), float(res.tvalues[0])
-
 
 def assign_quintiles_nyse(sort_var: pd.Series, exchcd: pd.Series) -> pd.Series:
     ref = sort_var[exchcd == 1].dropna() if exchcd is not None else sort_var.dropna()
@@ -163,11 +156,9 @@ def assign_quintiles_nyse(sort_var: pd.Series, exchcd: pd.Series) -> pd.Series:
     out[v & (sort_var > q80)]                      = 5
     return out
 
-
 def winsorize_cs(s: pd.Series) -> pd.Series:
     lo, hi = s.quantile(WINSOR_LOW), s.quantile(WINSOR_HIGH)
     return s.clip(lo, hi)
-
 
 def load_ff3_weekly(ff_file):
     ff = pd.read_parquet(ff_file)
@@ -186,13 +177,7 @@ def load_ff3_weekly(ff_file):
     ).reset_index()
     return ff_w
 
-
-# ============================================================
-# Portfolio sort for one subsample
-# ============================================================
 def run_sort_subsample(panel, sort_col, ff_idx):
-    """Returns (mean_ew_bps, t_ew, alpha_ew_bps, t_alpha_ew,
-                mean_vw_bps, t_vw, alpha_vw_bps, t_alpha_vw, n_weeks)."""
     eligible = panel[
         (panel["valid_R_i_w_plus_1"] == True) &
         panel[sort_col].notna() &
@@ -263,7 +248,6 @@ def run_sort_subsample(panel, sort_col, ff_idx):
         len(common),
     )
 
-
 def run_all_sorts(panel, ff_idx, label=""):
     results = {}
     for sort_col in SORT_VARIABLES:
@@ -275,10 +259,6 @@ def run_all_sorts(panel, ff_idx, label=""):
         print(f"    {SORT_VARIABLES[sort_col]:<35}  {m:>8.2f}{_stars(t):3}  (t={t:.2f})")
     return results
 
-
-# ============================================================
-# Fama-MacBeth for one subsample
-# ============================================================
 def run_weekly_cs(df_week, predictors):
     sub = df_week[["R_i_w_plus_1"] + predictors].dropna()
     if len(sub) < MIN_STOCKS:
@@ -297,7 +277,6 @@ def run_weekly_cs(df_week, predictors):
         out[p] = float(res.params[i + 1])
     return out
 
-
 def nw_average(arr, lags):
     y = arr[np.isfinite(arr)]
     if len(y) < 10:
@@ -306,7 +285,6 @@ def nw_average(arr, lags):
         cov_type="HAC", cov_kwds={"maxlags": lags, "use_correction": True}
     )
     return float(res.params[0]) * 10_000, float(res.tvalues[0]), float(res.bse[0]) * 10_000
-
 
 def run_fm_subsample(panel, specs):
     summary  = {}
@@ -354,15 +332,7 @@ def run_fm_subsample(panel, specs):
 
     return summary, avg_rsq, n_weeks
 
-
-# ============================================================
-# LaTeX: subsample portfolio spreads
-# ============================================================
 def build_tex_sort_subsample(pre_res, post_res):
-    """
-    Two-panel table (Panel A: RSJ, Panel B: RES).
-    Columns: Signal | Pre-2008 EW | VW | Post-2008 EW | VW  (bps, t-stats below)
-    """
     def signal_rows(sort_col):
         pre  = pre_res.get(sort_col, (np.nan,) * 9)
         post = post_res.get(sort_col, (np.nan,) * 9)
@@ -370,10 +340,9 @@ def build_tex_sort_subsample(pre_res, post_res):
         spr  = SPREAD_DIR[sort_col]
 
         def pair(res, w_idx, t_idx):
-            return _fmt(res[w_idx], res[t_idx]), \
+            return _fmt(res[w_idx], res[t_idx]),\
                    f"({res[t_idx]:.2f})" if np.isfinite(res[t_idx]) else ""
 
-        # EW: index 0/1, VW: index 4/5
         pre_ew_m,  pre_ew_t  = pair(pre,  0, 1)
         pre_vw_m,  pre_vw_t  = pair(pre,  4, 5)
         post_ew_m, post_ew_t = pair(post, 0, 1)
@@ -423,18 +392,12 @@ $^{*}p<0.10$, $^{**}p<0.05$, $^{***}p<0.01$.
 """
     return tex
 
-
-# ============================================================
-# LaTeX: subsample FM tables
-# ============================================================
 def _fm_tex_block(pre_summ, post_summ, pre_rsq, post_rsq,
                   pre_nw, post_nw, specs, focal_vars, title, label):
-    """Generic subsample FM table builder."""
     spec_list = [s for s in specs if s in pre_summ or s in post_summ]
     if not spec_list:
         return ""
 
-    # Column header: Pre | Post for each spec
     pre_labels  = [f"\\multicolumn{{1}}{{c}}{{Pre}}" for s in spec_list]
     post_labels = [f"\\multicolumn{{1}}{{c}}{{Post}}" for s in spec_list]
     spec_labels = [f"\\multicolumn{{2}}{{c}}{{{s}}}" for s in spec_list]
@@ -509,10 +472,6 @@ def _fm_tex_block(pre_summ, post_summ, pre_rsq, post_rsq,
     ]
     return "\n".join(lines)
 
-
-# ============================================================
-# Main
-# ============================================================
 def main():
     print("=== Subsample Analysis: Pre-2008 vs. Post-2008 ===\n")
 
@@ -535,9 +494,6 @@ def main():
     print(f"Post-2008  : {post_panel['week'].nunique():>5} weeks  "
           f"({post_panel['week'].min().date()} – {post_panel['week'].max().date()})")
 
-    # ----------------------------------------------------------
-    # 1) Portfolio sorts
-    # ----------------------------------------------------------
     print("\n--- Portfolio Sorts (Pre-2008) ---")
     pre_sort = run_all_sorts(pre_panel, ff_idx)
 
@@ -549,16 +505,11 @@ def main():
     p.write_text(tex_sort, encoding="utf-8")
     print(f"\nSaved: {p.name}")
 
-    # ----------------------------------------------------------
-    # 2) Fama-MacBeth
-    # ----------------------------------------------------------
-    # Winsorize controls within each subsample
     for sub in (pre_panel, post_panel):
         for c in CONTROLS:
             if c in sub.columns:
                 sub[c] = sub.groupby("week")[c].transform(winsorize_cs)
 
-    # Filter to stock-weeks with valid forward return
     pre_fm  = pre_panel[pre_panel["valid_R_i_w_plus_1"]].copy()
     post_fm = post_panel[post_panel["valid_R_i_w_plus_1"]].copy()
 
@@ -568,7 +519,6 @@ def main():
     print("\n--- Fama-MacBeth (Post-2008) ---")
     post_summ, post_rsq, post_nw = run_fm_subsample(post_fm, SPECS)
 
-    # Aggregate table: B1–B3
     tex_agg = _fm_tex_block(
         pre_summ, post_summ, pre_rsq, post_rsq, pre_nw, post_nw,
         specs      = ["B1", "B2", "B3"],
@@ -580,7 +530,6 @@ def main():
     p.write_text(tex_agg, encoding="utf-8")
     print(f"\nSaved: {p.name}")
 
-    # Decomposition table: B4–B8
     tex_decomp = _fm_tex_block(
         pre_summ, post_summ, pre_rsq, post_rsq, pre_nw, post_nw,
         specs      = ["B4", "B5", "B6", "B7", "B8"],
@@ -594,7 +543,6 @@ def main():
     p.write_text(tex_decomp, encoding="utf-8")
     print(f"\nSaved: {p.name}")
 
-    # Supplementary table: B9, B10
     tex_supp = _fm_tex_block(
         pre_summ, post_summ, pre_rsq, post_rsq, pre_nw, post_nw,
         specs      = ["B9", "B10"],
@@ -607,7 +555,6 @@ def main():
     print(f"\nSaved: {p.name}")
 
     print("\n=== Done ===")
-
 
 if __name__ == "__main__":
     main()

@@ -1,32 +1,41 @@
+"""
+Build Method-1 Market Intraday Input
+
+Purpose:
+  Create the market intraday reference series from ETF data for RSJ method 1.
+
+Inputs:
+  - Converted ETF intraday files.
+
+Outputs:
+  - Market intraday files in data_intermediate/decomposition.
+
+Main Steps:
+  - Load ETF intraday files.
+  - Build market return series.
+  - Store method-1 market input files.
+"""
 from pathlib import Path
 import sys
 import numpy as np
 import pandas as pd
 
-
-# =========================
-# User settings
-# =========================
 INPUT_DIR = Path("data_intermediate/converted_parquet_etf")
 OUTPUT_FILE = Path("data_intermediate/market_returns/market_intraday_spy.parquet")
 
 TARGET_SYMBOL = "SPY"
 MIN_DAILY_OBS = 80
 
-
-
 SYMBOL_CANDIDATES = ["sym_root", "symbol", "ticker", "tic"]
 DATE_CANDIDATES = ["date", "trading_date"]
 RETURNS_VECTOR_CANDIDATES = ["returns_5m", "ret_5m_series", "intraday_returns"]
 NOBS_CANDIDATES = ["n_obs", "n_intervals"]
-
 
 def find_first_existing(columns, candidates):
     for c in candidates:
         if c in columns:
             return c
     return None
-
 
 def normalize_date(series):
     s = pd.to_datetime(series, errors="coerce")
@@ -35,7 +44,6 @@ def normalize_date(series):
     except (TypeError, AttributeError):
         pass
     return s.dt.normalize()
-
 
 def extract_return_vector(x):
     if x is None:
@@ -57,7 +65,6 @@ def extract_return_vector(x):
             out.append(np.nan)
     return out
 
-
 def expand_one_row(row, date_col, returns_col, nobs_col=None):
     date_val = row[date_col]
     returns_vec = extract_return_vector(row[returns_col])
@@ -73,7 +80,6 @@ def expand_one_row(row, date_col, returns_col, nobs_col=None):
     if nobs_col is not None and nobs_col in row.index:
         df["n_obs"] = row[nobs_col]
     return df
-
 
 def main():
     if not INPUT_DIR.exists():
@@ -182,7 +188,6 @@ def main():
     print(f"Output: {OUTPUT_FILE}")
     print("\nPreview:")
     print(market.head())
-
 
 if __name__ == "__main__":
     try:

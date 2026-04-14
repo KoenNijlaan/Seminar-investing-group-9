@@ -1,17 +1,19 @@
 """
-Verify and regenerate figures.
+Verify And Regenerate Figures
 
-Checks whether each of the 6 required figures exists and is fresh relative to the
-weekly panel. Regenerates stale or missing figures directly from saved intermediate
-data where possible; otherwise prints which analysis script to re-run.
+Purpose:
+  Check whether expected figures are present and up to date, and regenerate stale ones.
 
-Figures checked:
-  1  fig_portfolio_spreads_ew_bps       ← from 01_portfolio_sorts.py
-  2  fig_fm_coefficients_selected       ← from 02_fama_macbeth.py
-  3  fig_cumulative_long_short_performance ← generated here from spread_returns.parquet
-    4  fig_time_series_fm_betas_b3        ← generated here from fm_coefs_B3.parquet
-  5  fig_predictor_correlation_heatmap  ← generated here from weekly panel
-  6  fig_weekly_cross_section_coverage  ← generated here from weekly panel
+Inputs:
+  - Figure source data and existing files in results directories.
+
+Outputs:
+  - Updated figure files in data_final/results/figures.
+
+Main Steps:
+  - Check existence and timestamps.
+  - Flag missing or stale files.
+  - Regenerate only required figures.
 """
 from pathlib import Path
 import numpy as np
@@ -33,23 +35,19 @@ NBER_PERIODS = [
     ("2020-02-01", "2020-04-30"),
 ]
 
-# Figures that require re-running the parent analysis script (not regenerated here)
 PARENT_SCRIPTS = {
     "fig_portfolio_spreads_ew_bps": "01_portfolio_sorts.py",
     "fig_fm_coefficients_selected": "02_fama_macbeth.py",
 }
 
-
 def _add_nber(ax):
     for s, e in NBER_PERIODS:
         ax.axvspan(pd.Timestamp(s), pd.Timestamp(e), alpha=0.15, color="gray", lw=0)
-
 
 def _style_ax(ax):
     ax.grid(False)
     for spine in ax.spines.values():
         spine.set_edgecolor("#aaaaaa")
-
 
 def _save(fig, stem):
     for ext in ("pdf", "png"):
@@ -58,17 +56,11 @@ def _save(fig, stem):
     plt.close(fig)
     print(f"  Saved: {stem}.pdf/.png")
 
-
 def is_stale(fig_path, panel_mtime):
-    """Figure is stale if it doesn't exist or is older than the panel."""
     if not fig_path.exists():
         return True
     return fig_path.stat().st_mtime < panel_mtime
 
-
-# ============================================================
-# Figure 3: Cumulative long-short performance
-# ============================================================
 def make_cumulative_figure():
     path = INTER_DIR / "spread_returns.parquet"
     if not path.exists():
@@ -106,10 +98,6 @@ def make_cumulative_figure():
     fig.tight_layout()
     _save(fig, "fig_cumulative_long_short_performance")
 
-
-# ============================================================
-# Figure 4: Rolling FM betas for RSJ and RES (spec 5)
-# ============================================================
 def make_rolling_betas_figure():
     path = INTER_DIR / "fm_coefs_B3.parquet"
     if not path.exists():
@@ -137,10 +125,6 @@ def make_rolling_betas_figure():
     fig.tight_layout()
     _save(fig, "fig_time_series_fm_betas_b3")
 
-
-# ============================================================
-# Figure 5: Predictor correlation heatmap
-# ============================================================
 def make_heatmap_figure(panel):
     cols = [
         "rsj_weekly","rsj_sys_weekly","rsj_idio_weekly",
@@ -188,10 +172,6 @@ def make_heatmap_figure(panel):
     fig.tight_layout()
     _save(fig, "fig_predictor_correlation_heatmap")
 
-
-# ============================================================
-# Figure 6: Weekly cross-section coverage
-# ============================================================
 def make_coverage_figure(panel):
     weekly_n = panel.groupby("week").size().reset_index(name="n_stocks")
     weekly_n["week"] = pd.to_datetime(weekly_n["week"])
@@ -211,10 +191,6 @@ def make_coverage_figure(panel):
     fig.tight_layout()
     _save(fig, "fig_weekly_cross_section_coverage")
 
-
-# ============================================================
-# Main
-# ============================================================
 def main():
     print("=== Verify and Regenerate Figures ===\n")
 
@@ -250,7 +226,6 @@ def main():
 
     print(f"\nRegenerating {len(stale)} figure(s)...\n")
 
-    # Load panel once (needed for heatmap and coverage)
     panel = None
 
     for stem in stale:
@@ -279,7 +254,6 @@ def main():
                 make_coverage_figure(panel)
 
     print("\n=== Done ===")
-
 
 if __name__ == "__main__":
     main()

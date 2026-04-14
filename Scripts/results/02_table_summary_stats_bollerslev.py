@@ -1,3 +1,20 @@
+"""
+Bollerslev-Style Summary Table
+
+Purpose:
+  Create the alternative summary-statistics table in the Bollerslev-style layout.
+
+Inputs:
+  - Final panel data and results utility helpers.
+
+Outputs:
+  - Bollerslev-style summary table in the results folder.
+
+Main Steps:
+  - Compute grouped statistics.
+  - Apply table formatting.
+  - Write Bollerslev-style output.
+"""
 from __future__ import annotations
 
 import pandas as pd
@@ -22,7 +39,6 @@ SORT_VARIABLES = [
     "res_idio_p025",
 ]
 
-
 def load_ff3_weekly(ff_file) -> pd.DataFrame:
     ff = pd.read_parquet(ff_file)
     ff.columns = ff.columns.str.strip().str.lower()
@@ -34,7 +50,6 @@ def load_ff3_weekly(ff_file) -> pd.DataFrame:
     )
     ff_w["week"] = pd.to_datetime(ff_w["week"]).dt.normalize()
     return ff_w
-
 
 def compute_common_weeks(panel: pd.DataFrame, sort_cols: list[str], ff_idx: pd.DataFrame) -> list:
     base = panel[
@@ -52,7 +67,6 @@ def compute_common_weeks(panel: pd.DataFrame, sort_cols: list[str], ff_idx: pd.D
 
     return sorted(common)
 
-
 def main() -> None:
     ensure_output_dirs()
 
@@ -63,7 +77,6 @@ def main() -> None:
     else:
         panel["valid_R_i_w_plus_1"] = panel["R_i_w_plus_1"].notna()
 
-    # Restrict to Bollerslev (2020) sample period
     panel = panel[panel["week"] <= BOLLERSLEV_END].copy()
 
     ff_w   = load_ff3_weekly(FF_FILE)
@@ -118,7 +131,6 @@ def main() -> None:
     out = pd.DataFrame(rows)
     write_csv_and_tex(out, "table_summary_stats_bollerslev", float_fmt="%.6f")
     print("Saved Bollerslev summary statistics table.")
-
 
 if __name__ == "__main__":
     main()

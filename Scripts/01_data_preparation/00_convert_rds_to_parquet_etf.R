@@ -1,3 +1,20 @@
+"
+Convert ETF RDS Files To Parquet
+
+Purpose:
+  Convert raw daily ETF RDS files to Parquet so downstream scripts can read data quickly and consistently.
+
+Inputs:
+  - Daily ETF files in data_raw/intraday_etfs.
+
+Outputs:
+  - Converted files in data_intermediate/converted_parquet_etf.
+
+Main Steps:
+  - Loop over each RDS file.
+  - Normalize the date column.
+  - Write one Parquet file per input file.
+"
 if (!requireNamespace("arrow", quietly = TRUE)) {
   install.packages("arrow", repos = "https://cloud.r-project.org")
 }

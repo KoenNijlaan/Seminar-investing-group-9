@@ -1,20 +1,20 @@
 """
-Quintile portfolio sorts following Bollerslev, Li & Zhao (2020).
+Portfolio Sort Analysis
 
-For each of 8 sorting variables, each week t:
-  1. Sort eligible stocks into quintiles Q1–Q5 (NYSE breakpoints)
-  2. Compute EW and VW portfolio returns for the HOLDING week t+1
-  3. Compute spread: L-H for RSJ signals, H-L for RES signals
-  4. Time-series mean (NW, 6 lags) and FF3 alpha (NW, 4 lags)
+Purpose:
+  Run weekly quintile sorts for RSJ and RES signals and produce spread-based results.
 
-FF3 alpha is reported. The Carhart UMD factor is deliberately omitted because
-momentum is already controlled for via the MOM variable in the cross-sections.
+Inputs:
+  - Final weekly panel and weekly Fama-French factors.
 
 Outputs:
-  data_final/portfolio_sorts/sort_results_all.parquet   ← intermediate
-  data_final/results/intermediate/spread_returns.parquet ← for cumulative figure
-  data_final/results/tables/tab_portfolio_spreads.tex
-  data_final/results/figures/fig_portfolio_spreads_ew_bps.{pdf,png}
+  - Portfolio sort parquet outputs, LaTeX table, and spread/cumulative/coverage figures.
+
+Main Steps:
+  - Build NYSE-breakpoint quintiles each week.
+  - Compute EW/VW returns and long-short spreads.
+  - Estimate Newey-West means and FF3 alphas.
+  - Export tables and figures.
 """
 from pathlib import Path
 import numpy as np
@@ -24,9 +24,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# ============================================================
-# Settings
-# ============================================================
 ROOT       = Path(__file__).resolve().parents[2]
 PANEL_FILE = ROOT / "data_final" / "panel" / "weekly_panel.parquet"
 FF_FILE    = ROOT / "data_raw" / "wrds" / "ff_daily_factors_1992_2024.parquet"
@@ -38,7 +35,7 @@ FIG_DIR    = ROOT / "data_final" / "results" / "figures"
 for d in (SORT_OUT, INTER_DIR, TABLE_DIR, FIG_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
-NW_LAGS        = 6   # Newey-West lags — applied everywhere uniformly
+NW_LAGS        = 6
 MIN_STOCKS     = 50
 
 NBER_PERIODS = [
@@ -69,14 +66,9 @@ SPREAD_DIR = {
     "res_idio_p025"  : "H-L",
 }
 
-# Panel A = RSJ signals, Panel B = RES signals
 PANEL_A = ["rsj_weekly","rsj_sys_weekly","rsj_idio_weekly","rsj_sys","rsj_idio"]
 PANEL_B = ["res_weekly","res_sys_p025","res_idio_p025"]
 
-
-# ============================================================
-# Helpers
-# ============================================================
 def _stars(t):
     if t is None or (isinstance(t, float) and np.isnan(t)):
         return ""
@@ -86,7 +78,6 @@ def _stars(t):
     if t > 1.645: return "*"
     return ""
 
-
 def _fmt(val, t=None, dec=2):
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return ""
@@ -95,9 +86,7 @@ def _fmt(val, t=None, dec=2):
         s += _stars(t)
     return s
 
-
 def nw_mean(series, lags):
-    """NW-HAC mean of a series. Returns (mean, t_stat, se)."""
     y = np.asarray(series, dtype=float)
     y = y[np.isfinite(y)]
     if len(y) < 10:
@@ -107,9 +96,7 @@ def nw_mean(series, lags):
     )
     return float(res.params[0]), float(res.tvalues[0]), float(res.bse[0])
 
-
 def nw_alpha(excess_ret, factors_df, lags):
-    """OLS of excess_ret on factors with HAC-NW. Returns (alpha, t_alpha)."""
     df = pd.DataFrame({"y": excess_ret}).join(factors_df).dropna()
     if len(df) < 20:
         return np.nan, np.nan
@@ -119,7 +106,6 @@ def nw_alpha(excess_ret, factors_df, lags):
         cov_type="HAC", cov_kwds={"maxlags": lags, "use_correction": True}
     )
     return float(res.params[0]), float(res.tvalues[0])
-
 
 def assign_quintiles_nyse(sort_var: pd.Series, exchcd: pd.Series) -> pd.Series:
     ref = sort_var[exchcd == 1].dropna() if exchcd is not None else sort_var.dropna()
@@ -136,7 +122,6 @@ def assign_quintiles_nyse(sort_var: pd.Series, exchcd: pd.Series) -> pd.Series:
     out[v & (sort_var > q60) & (sort_var <= q80)]       = 4
     out[v & (sort_var > q80)]                           = 5
     return out
-
 
 def load_ff3_weekly(ff_file):
     ff = pd.read_parquet(ff_file)
@@ -155,18 +140,12 @@ def load_ff3_weekly(ff_file):
     ).reset_index()
     return ff_w
 
-
 def compute_common_sort_weeks(panel: pd.DataFrame, sort_cols: list[str], ff_idx: pd.DataFrame) -> list[pd.Timestamp]:
-    """
-    Compute the intersection of weeks that satisfy eligibility for all sort variables.
-    This enforces a common time sample across all portfolio sorts.
-    """
     base = panel[
         (panel["valid_R_i_w_plus_1"] == True) &
         panel["R_i_w_plus_1"].notna()
     ].copy()
 
-    # Start from weeks present in the FF factor index.
     common = set(pd.to_datetime(ff_idx.index).normalize())
 
     for sort_col in sort_cols:
@@ -177,10 +156,6 @@ def compute_common_sort_weeks(panel: pd.DataFrame, sort_cols: list[str], ff_idx:
 
     return sorted(common)
 
-
-# ============================================================
-# Single sort
-# ============================================================
 def run_sort(panel, sort_col, ff_idx, label, common_weeks=None):
     eligible = panel[
         (panel["valid_R_i_w_plus_1"] == True) &
@@ -208,7 +183,6 @@ def run_sort(panel, sort_col, ff_idx, label, common_weeks=None):
     eligible["quintile"] = eligible["quintile"].astype(int)
     eligible["vw_weight"] = eligible["me_raw"].where(eligible["me_raw"] > 0, np.nan)
 
-    # Build EW/VW series per quintile
     qt_ew, qt_vw = {}, {}
     for q in range(1, 6):
         g = eligible[eligible["quintile"] == q]
@@ -227,7 +201,6 @@ def run_sort(panel, sort_col, ff_idx, label, common_weeks=None):
         sp_ew = (qt_ew[1] - qt_ew[5]).dropna()
         sp_vw = (qt_vw[1] - qt_vw[5]).dropna()
 
-    # Summarise each quintile + spread
     rows = []
     common_week_index = pd.Index(sorted(common_weeks)).intersection(ff_idx.index) if common_weeks is not None else None
 
@@ -271,12 +244,7 @@ def run_sort(panel, sort_col, ff_idx, label, common_weeks=None):
     spread_ew_ts = sp_ew.rename(sort_col)
     return pd.DataFrame(rows), spread_ew_ts
 
-
-# ============================================================
-# LaTeX table
-# ============================================================
 def build_latex(results_df):
-    """Build tab_portfolio_spreads.tex (booktabs + threeparttable)."""
     spread = results_df[results_df["quintile"].isin(["L-H", "H-L"])].copy()
 
     def row_pair(sort_col, weighting, label):
@@ -295,9 +263,9 @@ def build_latex(results_df):
         return (ew_mean, ew_t, ew_alpha, ew_ta, nw)
 
     col_header = (
-        r"\toprule" "\n"
-        r"Signal & Spread & EW Mean & VW Mean & EW $\alpha$ & VW $\alpha$ & $N$ \\" "\n"
-        r" & & (bps) & (bps) & (bps) & (bps) & weeks \\" "\n"
+        r"\toprule"  "\n"
+        r"Signal & Spread & EW Mean & VW Mean & EW $\alpha$ & VW $\alpha$ & $N$ \\"  "\n"
+        r" & & (bps) & (bps) & (bps) & (bps) & weeks \\"  "\n"
         r"\midrule"
     )
 
@@ -355,10 +323,6 @@ $^{*}p<0.10$, $^{**}p<0.05$, $^{***}p<0.01$.
 """
     return tex
 
-
-# ============================================================
-# Figure
-# ============================================================
 def build_figure(results_df):
     spread = results_df[
         results_df["quintile"].isin(["L-H", "H-L"]) &
@@ -367,7 +331,6 @@ def build_figure(results_df):
     spread["mean_bps"] = spread["mean_ret_weekly"] * 10_000
     spread["se_bps"]   = spread["se_mean"] * 10_000
 
-    # Order: RSJ signals then RES signals
     order = PANEL_A + PANEL_B
     spread["_ord"] = spread["sort_var"].map({s: i for i, s in enumerate(order)})
     spread = spread.sort_values("_ord", ascending=False).reset_index(drop=True)
@@ -392,12 +355,7 @@ def build_figure(results_df):
     fig.tight_layout()
     return fig
 
-
 def build_cumulative_figure(spread_df: pd.DataFrame):
-    """
-    Cumulative EW long-short returns (in percent) for four strategies:
-      RSJ total (L-H), RSJ idio M1 (L-H), RES total (H-L), RES idio (H-L).
-    """
     cols = {
         "rsj_weekly":    ("RSJ Total (L$-$H)",         "#1f77b4"),
         "rsj_idio_weekly": ("RSJ Idio M1 (L$-$H)",       "#2ca02c"),
@@ -416,7 +374,6 @@ def build_cumulative_figure(spread_df: pd.DataFrame):
     for start, end in NBER_PERIODS:
         ax.axvspan(pd.Timestamp(start), pd.Timestamp(end),
                    alpha=0.15, color="gray", lw=0)
-    # Mark end of Bollerslev sample
     ax.axvline(pd.Timestamp("2013-12-31"), color="black", lw=0.8,
                linestyle=":", label="End of Bollerslev (2020) sample")
 
@@ -439,11 +396,7 @@ def build_cumulative_figure(spread_df: pd.DataFrame):
     fig.tight_layout()
     return fig
 
-
 def build_coverage_figure(panel: pd.DataFrame):
-    """
-    Number of stocks in the estimation panel by week.
-    """
     counts = panel.groupby("week")["permno"].nunique().reset_index()
     counts.columns = ["week", "n_stocks"]
     counts["week"] = pd.to_datetime(counts["week"])
@@ -463,10 +416,6 @@ def build_coverage_figure(panel: pd.DataFrame):
     fig.tight_layout()
     return fig
 
-
-# ============================================================
-# Main
-# ============================================================
 def main():
     print("=== Portfolio Sorts ===\n")
 
@@ -485,7 +434,7 @@ def main():
     print(f"Common sort sample: {len(common_weeks)} weeks shared across all signals")
 
     all_results = []
-    spread_returns = {}  # sort_col → weekly EW spread series
+    spread_returns = {}
 
     for sort_col in SORT_VARIABLES:
         if sort_col not in panel.columns:
@@ -511,24 +460,20 @@ def main():
     combined = pd.concat(all_results, ignore_index=True)
     combined["quintile"] = combined["quintile"].astype(str)
 
-    # Save intermediate
     combined.to_parquet(SORT_OUT / "sort_results_all.parquet", index=False)
     print(f"\nSaved: sort_results_all.parquet")
 
-    # Save spread return time series for cumulative figure
     if spread_returns:
         INTER_DIR.mkdir(parents=True, exist_ok=True)
         sp_df = pd.DataFrame(spread_returns).reset_index().rename(columns={"index": "week"})
         sp_df.to_parquet(INTER_DIR / "spread_returns.parquet", index=False)
         print(f"Saved: spread_returns.parquet")
 
-    # LaTeX table
     tex = build_latex(combined)
     tex_path = TABLE_DIR / "tab_portfolio_spreads.tex"
     tex_path.write_text(tex, encoding="utf-8")
     print(f"Saved: {tex_path.name}")
 
-    # Figure 1: spread bar chart
     fig = build_figure(combined)
     for ext in ("pdf", "png"):
         fpath = FIG_DIR / f"fig_portfolio_spreads_ew_bps.{ext}"
@@ -536,7 +481,6 @@ def main():
     plt.close(fig)
     print(f"Saved: fig_portfolio_spreads_ew_bps.pdf/.png")
 
-    # Figure 2: cumulative long-short performance
     sp_path = INTER_DIR / "spread_returns.parquet"
     if sp_path.exists():
         sp_df = pd.read_parquet(sp_path)
@@ -548,7 +492,6 @@ def main():
             plt.close(fig2)
             print(f"Saved: fig_cumulative_long_short_performance.pdf/.png")
 
-    # Figure 3: weekly cross-section coverage
     fig3 = build_coverage_figure(panel)
     if fig3 is not None:
         for ext in ("pdf", "png"):
@@ -557,7 +500,6 @@ def main():
         plt.close(fig3)
         print(f"Saved: fig_weekly_cross_section_coverage.pdf/.png")
 
-    # Console summary
     print("\n" + "=" * 70)
     print("EW SPREAD RETURNS (bps/week)")
     print("=" * 70)
@@ -570,7 +512,6 @@ def main():
               f"{m:>8.2f}{stars}  (t={t:.2f})")
 
     print("\n=== Done ===")
-
 
 if __name__ == "__main__":
     main()
