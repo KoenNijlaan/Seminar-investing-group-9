@@ -42,7 +42,7 @@ PRED_LABEL = {
     "rvol":        "RVOL",
     "rsk":         "RSK",
     "rkt":         "RKT",
-    "n_obs_daily": r"NTRANS",
+    "n_obs_daily": r"$\log(\mathrm{NTRANS})$",
 }
 
 IDIO_SIGNALS = [
@@ -154,6 +154,172 @@ def run_all_specs(panel: pd.DataFrame) -> dict:
 
     return results
 
+def run_m2_illiq_specs(panel: pd.DataFrame) -> dict:
+    """
+    Run the illiquidity mechanism regression with rsj_idio (M2) as the
+    dependent variable, for univariate and controlled specifications.
+    Returns {("rsj_idio", "univ"): {...}, ("rsj_idio", "ctrl"): {...}}.
+    """
+    sig_col = "rsj_idio"
+    weeks   = sorted(panel["week"].unique())
+    out     = {}
+
+    for spec_type, regressors in [("univ", ["illiq"]),
+                                   ("ctrl", ["illiq"] + CONTROLS)]:
+        key = (sig_col, spec_type)
+        if sig_col not in panel.columns:
+            print(f"  SKIP {key}: {sig_col} not in panel")
+            out[key] = None
+            continue
+
+        coef_series = {p: [] for p in regressors}
+        rsq_series  = []
+        n_valid     = 0
+
+        for week in weeks:
+            r = run_ols_week(panel[panel["week"] == week], sig_col, regressors)
+            if r is None:
+                continue
+            n_valid += 1
+            rsq_series.append(r["rsq_adj"])
+            for p in regressors:
+                coef_series[p].append(r[p])
+
+        coefs = {p: nw_mean(np.array(coef_series[p], dtype=float), NW_LAGS)
+                 for p in regressors}
+        out[key] = {
+            "coefs":   coefs,
+            "rsq":     float(np.mean(rsq_series)) if rsq_series else np.nan,
+            "n_weeks": n_valid,
+        }
+        illiq_m, illiq_t = coefs.get("illiq", (np.nan, np.nan))
+        print(f"  M2 illiq [{spec_type}]  ILLIQ: {illiq_m:.4f} (t={illiq_t:.2f})"
+              f"  N={n_valid}")
+
+    return out
+
+
+def build_latex_robustness(existing: dict, m2: dict) -> str:
+    """
+    Two-panel LaTeX table comparing M1 vs M2 for the illiquidity mechanism.
+
+    Columns : RSJ_idio M1 | RSJ_idio M2 | RES_idio
+    Panels  : A – Univariate  |  B – Controlled
+    Reports : time-averaged ILLIQ coefficient + NW(6) t-statistic only.
+
+    existing : dict returned by run_all_specs()  (indices 0-3)
+    m2       : dict returned by run_m2_illiq_specs()
+    """
+    # Map existing results to named slots.
+    # SPECS order: 0=rsj_m1_univ, 1=rsj_m1_ctrl, 2=res_univ, 3=res_ctrl
+    named = {
+        ("rsj_idio_weekly", "univ"): existing.get(0),
+        ("rsj_idio_weekly", "ctrl"): existing.get(1),
+        ("res_idio_p025",   "univ"): existing.get(2),
+        ("res_idio_p025",   "ctrl"): existing.get(3),
+    }
+    named.update({k: v for k, v in m2.items() if v is not None})
+
+    COLS = [
+        ("rsj_idio_weekly", r"(M1)"),
+        ("rsj_idio",        r"(M2)"),
+        ("res_idio_p025",   r"---"),
+    ]
+    n_data = len(COLS)
+    col_spec = "l" + "c" * n_data
+
+    def get_illiq(dep_col, spec_type):
+        entry = named.get((dep_col, spec_type))
+        if entry is None:
+            return "", "", "", ""
+        m, t = entry["coefs"].get("illiq", (np.nan, np.nan))
+        return (
+            _fmt(m, t) if np.isfinite(m) else "",
+            f"({t:.2f})" if np.isfinite(t) else "",
+            str(entry["n_weeks"]),
+            _fmt_pct(entry["rsq"]),
+        )
+
+    def panel_rows(spec_type):
+        coef_cells, t_cells, n_cells, rsq_cells = [], [], [], []
+        for dep_col, _ in COLS:
+            c, t, n, rsq = get_illiq(dep_col, spec_type)
+            coef_cells.append(c); t_cells.append(t)
+            n_cells.append(n);    rsq_cells.append(rsq)
+        return (
+            [r"ILLIQ & " + " & ".join(coef_cells) + r" \\",
+             r"  & "    + " & ".join(t_cells)     + r" \\"],
+            n_cells, rsq_cells,
+        )
+
+    n_total = 1 + n_data
+    lines   = []
+    lines += [r"\begin{table}[htbp]", r"\centering", r"\begin{threeparttable}"]
+    lines += [r"\caption{Illiquidity Mechanism: Robustness to Decomposition Method"
+              r" (M1 vs.\ M2)}"]
+    lines += [r"\label{tab:robustness_illiquidity}"]
+    lines += [rf"\begin{{tabular}}{{{col_spec}}}"]
+    lines += [r"\toprule"]
+    lines += [
+        r"  & \multicolumn{2}{c}{RSJ$^{\mathrm{idio}}$}"
+        r" & \multicolumn{1}{c}{RES$^{\mathrm{idio}}$} \\",
+        r"\cmidrule(lr){2-3}",
+    ]
+    lines += [
+        "  & " + " & ".join(lbl for _, lbl in COLS) + r" \\"
+    ]
+    lines += [r"\midrule"]
+
+    # Panel A: Univariate
+    lines += [
+        rf"\multicolumn{{{n_total}}}{{l}}"
+        rf"{{\textit{{Panel A: Univariate specification"
+        rf" ($C_{{i,w}} = \alpha + \delta\,\mathrm{{ILLIQ}}_{{i,w}} + \nu_{{i,w}}$)"
+        rf"}}}}\\"
+    ]
+    univ_rows, univ_n, univ_rsq = panel_rows("univ")
+    lines += univ_rows
+    lines += [r"\midrule"]
+
+    # Panel B: Controlled
+    lines += [
+        rf"\multicolumn{{{n_total}}}{{l}}"
+        rf"{{\textit{{Panel B: Controlled specification"
+        rf" ($C_{{i,w}} = \alpha + \delta\,\mathrm{{ILLIQ}}_{{i,w}}"
+        rf" + \eta^\top X_{{i,w}} + \nu_{{i,w}}$)"
+        rf"}}}}\\"
+    ]
+    ctrl_rows, ctrl_n, ctrl_rsq = panel_rows("ctrl")
+    lines += ctrl_rows
+    lines += [r"\midrule"]
+
+    lines += [r"$N_{\text{weeks}}$ (A) & " + " & ".join(univ_n)   + r" \\"]
+    lines += [r"$N_{\text{weeks}}$ (B) & " + " & ".join(ctrl_n)   + r" \\"]
+    lines += [r"Avg.\ Adj.\ $R^2$ (A) & " + " & ".join(univ_rsq) + r" \\"]
+    lines += [r"Avg.\ Adj.\ $R^2$ (B) & " + " & ".join(ctrl_rsq) + r" \\"]
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    lines += [
+        r"\begin{tablenotes}", r"\small",
+        r"\item Notes: Weekly cross-sectional regressions following"
+        r" equation~(\ref{eq:mech}). The dependent variable $C_{i,w}$ is"
+        r" the idiosyncratic RSJ (M1: intraday decomposition; M2: rolling"
+        r" 52-week market-RSJ regression) or the idiosyncratic RES"
+        r" (RES$^{\mathrm{idio}}$; no M2 equivalent)."
+        r" The focal regressor is log-Amihud illiquidity (ILLIQ)."
+        r" Panel~A is the univariate specification; Panel~B adds controls"
+        r" $X_{i,w} = (\log\mathrm{ME}, \mathrm{BM}, \mathrm{MOM},"
+        r" \mathrm{REV}, \mathrm{IVOL}, \mathrm{RVOL}, \mathrm{RSK},"
+        r" \mathrm{RKT}, \log\mathrm{NTRANS})$; ILLIQ is not duplicated"
+        r" inside $X_{i,w}$."
+        r" All coefficients are time-series averages of weekly OLS slopes;"
+        r" $t$-statistics in parentheses use Newey--West HAC with 6 lags."
+        r" $^{*}p<0.10$, $^{**}p<0.05$, $^{***}p<0.01$.",
+        r"\end{tablenotes}",
+        r"\end{threeparttable}", r"\end{table}",
+    ]
+    return "\n".join(lines)
+
+
 def build_latex(results: dict) -> str:
     col_keys = sorted(results.keys())
     n_cols   = len(col_keys)
@@ -241,7 +407,7 @@ def build_latex(results: dict) -> str:
         r" The focal regressor is log-Amihud illiquidity (ILLIQ)."
         r" The controlled specification adds $X_{i,w} = (\log\mathrm{ME},"
         r" \mathrm{BM}, \mathrm{MOM}, \mathrm{REV}, \mathrm{IVOL},"
-        r" \mathrm{RVOL}, \mathrm{RSK}, \mathrm{RKT}, \mathrm{NTRANS})$"
+        r" \mathrm{RVOL}, \mathrm{RSK}, \mathrm{RKT}, \log\mathrm{NTRANS})$"
         r" following equation~(\ref{eq:controls_mech}); ILLIQ is not"
         r" duplicated inside $X_{i,w}$."
         r" All coefficients are time-series averages of weekly OLS slopes;"
@@ -261,7 +427,11 @@ def main() -> None:
     panel = pd.read_parquet(PANEL_FILE)
     panel["week"] = pd.to_datetime(panel["week"]).dt.normalize()
 
-    panel["n_obs_daily"] = panel["n_obs_total"] / panel["n_days"]
+    panel["n_obs_daily"] = np.nan
+    valid_ntrans = panel["n_days"].gt(0) & panel["n_obs_total"].gt(0)
+    panel.loc[valid_ntrans, "n_obs_daily"] = np.log(
+        panel.loc[valid_ntrans, "n_obs_total"] / panel.loc[valid_ntrans, "n_days"]
+    )
 
     for c in ["illiq"] + CONTROLS:
         if c in panel.columns:
@@ -273,6 +443,15 @@ def main() -> None:
     out = TABLE_DIR / "tab_illiquidity.tex"
     out.write_text(tex, encoding="utf-8")
     print(f"\nSaved: {out.name}")
+
+    print("\n--- M2 illiquidity mechanism specs ---")
+    m2_results = run_m2_illiq_specs(panel)
+
+    tex_rob = build_latex_robustness(results, m2_results)
+    out_rob = TABLE_DIR / "tab_illiquidity_robustness.tex"
+    out_rob.write_text(tex_rob, encoding="utf-8")
+    print(f"Saved: {out_rob.name}")
+
     print("\n=== Done ===")
 
 if __name__ == "__main__":

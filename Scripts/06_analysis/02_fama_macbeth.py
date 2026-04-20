@@ -92,7 +92,7 @@ SPECS = {
     "B7":  ["rsj_sys_weekly", "rsj_idio_weekly", "res_sys_p025", "res_idio_p025"] + CONTROLS,
     "B8":  ["rsj_sys", "rsj_idio", "res_sys_p025", "res_idio_p025"] + CONTROLS,
     "B9":  ["rsj_idio_weekly", "res_idio_p025"] + CONTROLS,
-    "B10": ["rsj_sys_weekly", "res_idio_p025"] + CONTROLS,
+    "B10": ["rsj_sys_weekly", "res_sys_p025"] + CONTROLS,
 }
 
 PRED_LABEL = {
@@ -334,10 +334,10 @@ def build_tab_decomposition(summary, avg_rsq, all_weekly):
 def build_tab_supplementary(summary, avg_rsq, all_weekly):
     specs  = ["B9", "B10"]
     labels = [r"(B9) RSJ$_{\mathrm{idio}}$ + RES$_{\mathrm{idio}}$",
-              r"(B10) RSJ$_{\mathrm{sys}}$ + RES$_{\mathrm{idio}}$"]
+              r"(B10) RSJ$_{\mathrm{sys}}$ + RES$_{\mathrm{sys}}$"]
     n_cols = len(specs)
 
-    focal = ["rsj_idio_weekly","rsj_sys_weekly","res_idio_p025"]
+    focal = ["rsj_idio_weekly","rsj_sys_weekly","res_idio_p025","res_sys_p025"]
     rows_vars = focal + CONTROLS
 
     def cell(spec, pred):

@@ -46,8 +46,8 @@ NBER_PERIODS = [
 
 SORT_VARIABLES = {
     "rsj_weekly"     : "RSJ",
-    "rsj_sys_weekly" : "RSJ Systematic (M1)",
-    "rsj_idio_weekly": "RSJ Idiosyncratic (M1)",
+    "rsj_sys_weekly" : "RSJ Systematic",
+    "rsj_idio_weekly": "RSJ Idiosyncratic",
     "rsj_sys"        : "RSJ Systematic (M2)",
     "rsj_idio"       : "RSJ Idiosyncratic (M2)",
     "res_weekly"     : "RES",
@@ -358,7 +358,7 @@ def build_figure(results_df):
 def build_cumulative_figure(spread_df: pd.DataFrame):
     cols = {
         "rsj_weekly":    ("RSJ Total (L$-$H)",         "#1f77b4"),
-        "rsj_idio_weekly": ("RSJ Idio M1 (L$-$H)",       "#2ca02c"),
+        "rsj_idio_weekly": ("RSJ Idio (L$-$H)",          "#2ca02c"),
         "res_weekly":    ("RES Total (H$-$L)",          "#ff7f0e"),
         "res_idio_p025": ("RES Idio (H$-$L)",           "#d62728"),
     }
